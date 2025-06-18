@@ -58,6 +58,18 @@ const ResourceSchema = new mongoose.Schema(
         of: Number,
         default: new Map(),
       },
+      tokenPricing: {
+        inputTokenPrice: { type: Number },
+        outputTokenPrice: { type: Number },
+        maxTokens: { type: Number },
+      },
+    },
+    llmConfig: {
+      modelId: String,
+      provider: String,
+      region: String,
+      defaultTemperature: { type: Number, default: 0.7 },
+      defaultMaxTokens: { type: Number, default: 1000 },
     },
     mcpAuth: {
       type: {
@@ -80,6 +92,9 @@ const ResourceSchema = new mongoose.Schema(
       totalEarnings: { type: Number, default: 0 },
       uniqueUsers: { type: Number, default: 0 },
       lastUsed: Date,
+      totalTokensUsed: { type: Number, default: 0 },
+      totalInputTokens: { type: Number, default: 0 },
+      totalOutputTokens: { type: Number, default: 0 },
     },
     isActive: {
       type: Boolean,

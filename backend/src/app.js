@@ -9,6 +9,11 @@ import { processPriceToAtomicAmount } from "x402/shared";
 import Resource from "./models/Resource.js";
 import resourceRoutes from "./routes/resources.js";
 import playgroundRoutes from "./routes/playground.js";
+import {
+  callLLM,
+  getModelPrice,
+  getTokenLimit,
+} from "./services/llmService.js";
 
 config();
 
@@ -180,77 +185,100 @@ app.all("/proxy/:resourceId/*", async (req, res) => {
       }
 
       if (method === "tools/call") {
-        console.log("💰 Paid tools/call request - checking payment...");
+        console.log("🤖 AI model request - checking payment...");
 
-        // Determine the price for this specific tool
-        let price = resource.pricing.defaultAmount;
-        const toolName = req.body.params?.name;
+        const { messages, temperature, max_tokens, ...otherOptions } = req.body;
 
-        if (resource.pricing.model === "per_tool" && toolName) {
-          const toolPrice = resource.pricing.toolPricing.get(toolName);
-          if (toolPrice !== undefined) {
-            price = toolPrice;
-            console.log(`💰 Per-tool pricing: ${toolName} = $${price}`);
-          } else {
-            console.log(`💰 Using default price for ${toolName}: $${price}`);
-          }
-        } else {
-          console.log(`💰 Per-call pricing: $${price}`);
+        if (!messages || !Array.isArray(messages)) {
+          return res.status(400).json({
+            error: "Invalid request format",
+            expected:
+              "{ messages: [...], temperature?: number, max_tokens?: number }",
+          });
         }
 
-        // FIXED: Create payment requirements with correct resource URL
-        // Use the original URL without duplication
+        // Get fixed price for this model (simple!)
+        const fixedPrice = getModelPrice(resource.llmConfig.modelId);
+        const tokenLimit = getTokenLimit(resource.llmConfig.modelId);
+
+        console.log(
+          `💰 Fixed pricing: $${fixedPrice} for up to ${tokenLimit} tokens`
+        );
+
+        // Create payment requirements with fixed price
         const baseUrl = `${req.protocol}://${req.get("host")}`;
         const resourceUrl = `${baseUrl}/proxy/${resourceId}/${path}`;
-        console.log(`🔍 Generated resource URL: ${resourceUrl}`);
 
         const paymentRequirements = [
           createExactPaymentRequirements(
-            `$${price}`, // Dynamic price from database
+            `$${fixedPrice}`, // Fixed price - no calculation needed
             "base-sepolia",
-            resourceUrl, // FIXED: No more duplication
-            resource.creatorAddress, // Dynamic payTo from database
-            `Payment for ${resource.name} - ${toolName || "tool call"}`
+            resourceUrl,
+            resource.creatorAddress,
+            `${resource.name} - up to ${tokenLimit} tokens`
           ),
         ];
 
-        console.log(`🔍 Payment requirements created:`, paymentRequirements[0]);
-
-        // Verify payment
+        // Verify payment for fixed amount
         const isValid = await verifyPayment(req, res, paymentRequirements);
         if (!isValid) return;
 
-        // If payment is valid, process the request
-        console.log("✅ Payment verified, executing tool call");
+        console.log("✅ Payment verified, generating LLM response...");
 
         try {
-          // Forward request to original API
-          const { forwardToOriginalAPI } = await import(
-            "./services/proxyService.js"
+          // Call LLM with token limits
+          const llmResponse = await callLLM(
+            resource.llmConfig.modelId,
+            messages,
+            {
+              temperature: temperature || resource.llmConfig.defaultTemperature,
+              maxTokens: max_tokens,
+              ...otherOptions,
+            }
           );
-          const result = await forwardToOriginalAPI(resource, req);
 
-          // Process payment settlement
-          const settleResponse = await settle(
-            exact.evm.decodePayment(req.header("X-PAYMENT")),
-            paymentRequirements[0]
+          console.log(
+            `📊 Token usage: ${llmResponse.usage.totalTokens}/${tokenLimit} tokens used`
           );
-          const responseHeader = settleResponseHeader(settleResponse);
-          res.setHeader("X-PAYMENT-RESPONSE", responseHeader);
 
-          // Log successful transaction
+          // Return response immediately (no settlement needed!)
+          res.json({
+            id: crypto.randomUUID(),
+            object: "chat.completion",
+            created: Math.floor(Date.now() / 1000),
+            model: resource.llmConfig.modelId,
+            choices: [
+              {
+                index: 0,
+                message: {
+                  role: "assistant",
+                  content: llmResponse.text,
+                },
+                finish_reason: llmResponse.usage.withinLimit
+                  ? "stop"
+                  : "length",
+              },
+            ],
+            usage: llmResponse.usage,
+            pricing: llmResponse.pricing,
+          });
+
+          // Simple transaction logging (no settlement complexity)
           const Transaction = (await import("./models/Transaction.js")).default;
           const transaction = new Transaction({
             resourceId: resource.id,
             resourceName: resource.name,
-            fromAddress: settleResponse.payer || "unknown",
+            fromAddress: "payment_verified", // We don't have payer info without settlement
             toAddress: resource.creatorAddress,
-            amount: price,
-            toolUsed: toolName || "tool_call",
+            amount: fixedPrice,
+            toolUsed: resource.llmConfig.modelId,
             requestData: {
               method: req.method,
               path: path,
-              body: req.body,
+              body: {
+                messages: `${messages.length} messages`,
+                tokensUsed: llmResponse.usage.totalTokens,
+              },
             },
           });
 
@@ -262,23 +290,23 @@ app.all("/proxy/:resourceId/*", async (req, res) => {
             {
               $inc: {
                 "stats.totalUses": 1,
-                "stats.totalEarnings": price,
+                "stats.totalEarnings": fixedPrice,
+                "stats.totalTokensUsed": llmResponse.usage.totalTokens,
               },
               $set: {
                 "stats.lastUsed": new Date(),
               },
             }
           );
-
-          // Return the result
-          return res.json(result);
         } catch (error) {
-          console.error("Error processing paid request:", error);
+          console.error("Error calling LLM:", error);
           return res.status(500).json({
-            error: "Failed to process request",
+            error: "LLM generation failed",
             message: error.message,
           });
         }
+
+        return;
       }
 
       // Unknown MCP method
@@ -287,6 +315,132 @@ app.all("/proxy/:resourceId/*", async (req, res) => {
         method,
         supported: ["tools/list", "tools/call"],
       });
+    }
+
+    // Handle LLM (AI model) requests
+    if (resource.type === "ai_model" && req.method === "POST") {
+      console.log("🤖 AI model request - checking payment...");
+
+      const { messages, temperature, max_tokens, ...otherOptions } = req.body;
+
+      if (!messages || !Array.isArray(messages)) {
+        return res.status(400).json({
+          error: "Invalid request format",
+          expected:
+            "{ messages: [...], temperature?: number, max_tokens?: number }",
+        });
+      }
+
+      // Get fixed price for this model (simple!)
+      const fixedPrice = getModelPrice(resource.llmConfig.modelId);
+      const tokenLimit = getTokenLimit(resource.llmConfig.modelId);
+
+      console.log(
+        `💰 Fixed pricing: $${fixedPrice} for up to ${tokenLimit} tokens`
+      );
+
+      // Create payment requirements with fixed price
+      const baseUrl = `${req.protocol}://${req.get("host")}`;
+      const resourceUrl = `${baseUrl}/proxy/${resourceId}/${path}`;
+
+      const paymentRequirements = [
+        createExactPaymentRequirements(
+          `$${fixedPrice}`, // Fixed price - no calculation needed
+          "base-sepolia",
+          resourceUrl,
+          resource.creatorAddress,
+          `${resource.name} - up to ${tokenLimit} tokens`
+        ),
+      ];
+
+      console.log(`🔍 Payment requirements:`, paymentRequirements[0]);
+
+      // Verify payment for fixed amount
+      const isValid = await verifyPayment(req, res, paymentRequirements);
+      if (!isValid) return;
+
+      console.log("✅ Payment verified, generating LLM response...");
+
+      try {
+        // Call LLM with token limits
+        const llmResponse = await callLLM(
+          resource.llmConfig.modelId,
+          messages,
+          {
+            temperature: temperature || resource.llmConfig.defaultTemperature,
+            maxTokens: max_tokens,
+            ...otherOptions,
+          }
+        );
+
+        console.log(
+          `📊 Token usage: ${llmResponse.usage.totalTokens}/${tokenLimit} tokens used`
+        );
+
+        // Return response immediately (no settlement needed!)
+        res.json({
+          id: crypto.randomUUID(),
+          object: "chat.completion",
+          created: Math.floor(Date.now() / 1000),
+          model: resource.llmConfig.modelId,
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: "assistant",
+                content: llmResponse.text,
+              },
+              finish_reason: llmResponse.usage.withinLimit ? "stop" : "length",
+            },
+          ],
+          usage: llmResponse.usage,
+          pricing: llmResponse.pricing,
+        });
+
+        // Simple transaction logging (no settlement complexity)
+        const Transaction = (await import("./models/Transaction.js")).default;
+        const transaction = new Transaction({
+          resourceId: resource.id,
+          resourceName: resource.name,
+          fromAddress: "payment_verified", // We don't have payer info without settlement
+          toAddress: resource.creatorAddress,
+          amount: fixedPrice,
+          toolUsed: resource.llmConfig.modelId,
+          requestData: {
+            method: req.method,
+            path: path,
+            body: {
+              messages: `${messages.length} messages`,
+              tokensUsed: llmResponse.usage.totalTokens,
+            },
+          },
+        });
+
+        await transaction.save();
+
+        // Update resource stats
+        await Resource.findOneAndUpdate(
+          { id: resource.id },
+          {
+            $inc: {
+              "stats.totalUses": 1,
+              "stats.totalEarnings": fixedPrice,
+              "stats.totalTokensUsed": llmResponse.usage.totalTokens,
+            },
+            $set: {
+              "stats.lastUsed": new Date(),
+            },
+          }
+        );
+      } catch (error) {
+        console.error("Error calling LLM:", error);
+        return res.status(500).json({
+          error: "LLM generation failed",
+          message: error.message,
+        });
+      }
+
+      return;
     }
 
     // For other resource types, apply similar payment logic
