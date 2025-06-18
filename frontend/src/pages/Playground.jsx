@@ -13,6 +13,20 @@ import {
   ArrowLeft,
 } from "lucide-react";
 
+// Simple text cleaner to remove markdown syntax
+const cleanMarkdown = (text) => {
+  return text
+    .replace(/^#{1,6}\s*/gm, "") // Remove # headers
+    .replace(/\*\*(.*?)\*\*/g, "$1") // Remove ** bold markers
+    .replace(/\*(.*?)\*/g, "$1") // Remove * italic markers
+    .replace(/`([^`]+)`/g, "$1") // Remove ` code markers
+    .replace(/```[\s\S]*?```/g, (match) => {
+      // Clean code blocks but preserve content
+      return match.replace(/```\w*\n?/g, "").replace(/```$/g, "");
+    })
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1"); // Convert links to just text
+};
+
 const Playground = () => {
   // Get resourceId from URL manually
   const resourceId = window.location.pathname.split("/").pop();
@@ -337,22 +351,22 @@ const Playground = () => {
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => window.history.back()}
-                className="flex items-center text-gray-600 hover:text-gray-800"
-              >
-                <ArrowLeft className="w-5 h-5 mr-2" />
-                Back to Marketplace
-              </button>
+            <div className="flex items-center space-x-6">
               <div className="flex items-center space-x-3">
                 <div className="w-8 h-8 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg flex items-center justify-center">
                   <Zap className="w-5 h-5 text-white" />
                 </div>
                 <h1 className="text-xl font-bold text-gray-900">
-                  AI402 Playground
+                  AI402 MCP Playground
                 </h1>
               </div>
+              <button
+                onClick={() => window.history.back()}
+                className="flex items-center text-gray-600 hover:text-gray-800 text-sm"
+              >
+                <ArrowLeft className="w-4 h-4 mr-1" />
+                Browse Tools
+              </button>
             </div>
 
             {/* Wallet Section */}
@@ -393,11 +407,11 @@ const Playground = () => {
       </div>
 
       {/* Main Content */}
-      <div className="max-w-6xl mx-auto px-4 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      <div className="max-w-7xl mx-auto px-4 py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Sidebar - Resource Selection */}
-          <div className="lg:col-span-1">
-            <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-4">
+          <div className="lg:col-span-4 flex flex-col h-[720px] space-y-4">
+            <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-4 flex-shrink-0">
               <h3 className="font-semibold text-gray-900">Configuration</h3>
 
               {/* LLM Selection */}
@@ -492,11 +506,77 @@ const Playground = () => {
                 </div>
               )}
             </div>
+
+            {/* Available Tools */}
+            {selectedMCP &&
+              selectedMCP.mcpTools &&
+              selectedMCP.mcpTools.length > 0 && (
+                <div className="bg-white rounded-lg border border-gray-200 flex-1 flex flex-col min-h-0">
+                  <div className="p-4 border-b border-gray-100 flex-shrink-0">
+                    <h3 className="font-semibold text-gray-900 flex items-center">
+                      <Zap className="w-4 h-4 mr-2 text-blue-600" />
+                      Available Tools ({selectedMCP.mcpTools.length})
+                    </h3>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4 min-h-0">
+                    <div className="space-y-3">
+                      {selectedMCP.mcpTools.map((tool, index) => (
+                        <div
+                          key={tool._id || index}
+                          className="border border-gray-100 rounded-lg p-3 hover:bg-gray-50 transition-colors"
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <h4 className="text-sm font-medium text-gray-900 mb-1">
+                                {tool.name.replace(/_/g, " ")}
+                              </h4>
+                              {tool.description && (
+                                <p className="text-xs text-gray-600 mb-2">
+                                  {tool.description}
+                                </p>
+                              )}
+                              {tool.inputSchema?.properties && (
+                                <div className="text-xs text-gray-500">
+                                  <div className="flex flex-wrap gap-1">
+                                    <span className="font-medium">
+                                      Parameters:
+                                    </span>
+                                    {Object.keys(
+                                      tool.inputSchema.properties
+                                    ).map((param, i) => (
+                                      <span
+                                        key={param}
+                                        className="bg-gray-100 px-1.5 py-0.5 rounded text-xs"
+                                      >
+                                        {param}
+                                        {tool.inputSchema.required?.includes(
+                                          param
+                                        ) && (
+                                          <span className="text-red-500">
+                                            *
+                                          </span>
+                                        )}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                            <div className="ml-2 text-xs text-gray-400">
+                              ${selectedMCP.pricing.defaultAmount}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
           </div>
 
           {/* Chat Interface */}
-          <div className="lg:col-span-3">
-            <div className="bg-white rounded-lg border border-gray-200 h-[600px] flex flex-col">
+          <div className="lg:col-span-8">
+            <div className="bg-white rounded-lg border border-gray-200 h-[720px] flex flex-col">
               {/* Chat Header */}
               <div className="border-b border-gray-200 p-4">
                 <div className="flex items-center justify-between">
@@ -549,7 +629,7 @@ const Playground = () => {
                       <div className="flex items-start space-x-2">
                         {message.role === "assistant" && (
                           <Bot
-                            className={`w-5 h-5 mt-0.5 ${
+                            className={`w-7 h-7 mt-0.5 flex-shrink-0 ${
                               message.isError ? "text-red-600" : "text-gray-600"
                             }`}
                           />
@@ -558,7 +638,11 @@ const Playground = () => {
                           <User className="w-5 h-5 mt-0.5 text-blue-100" />
                         )}
                         <div>
-                          <p className="text-sm">{message.content}</p>
+                          <div className="text-sm leading-relaxed whitespace-pre-wrap">
+                            {message.role === "assistant" && !message.isError
+                              ? cleanMarkdown(message.content)
+                              : message.content}
+                          </div>
                           {message.toolUsed && (
                             <div className="mt-2 text-xs opacity-75">
                               <div className="flex items-center space-x-1">
@@ -684,23 +768,34 @@ const Playground = () => {
               >
                 Cancel
               </button>
-              <button
-                onClick={handlePayment}
-                disabled={processingPayment || !isConnected}
-                className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center justify-center"
-              >
-                {processingPayment ? (
-                  <>
-                    <Loader className="w-4 h-4 animate-spin mr-2" />
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    <Wallet className="w-4 h-4 mr-2" />
-                    Pay & Execute
-                  </>
-                )}
-              </button>
+              {!isConnected ? (
+                <button
+                  onClick={connectWallet}
+                  disabled={processingPayment}
+                  className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center justify-center"
+                >
+                  <Wallet className="w-4 h-4 mr-2" />
+                  Connect Wallet
+                </button>
+              ) : (
+                <button
+                  onClick={handlePayment}
+                  disabled={processingPayment}
+                  className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center justify-center"
+                >
+                  {processingPayment ? (
+                    <>
+                      <Loader className="w-4 h-4 animate-spin mr-2" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <Wallet className="w-4 h-4 mr-2" />
+                      Pay & Execute
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           </div>
         </div>
