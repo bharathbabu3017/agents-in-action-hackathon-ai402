@@ -2,6 +2,7 @@ export async function forwardToOriginalAPI(resource, req) {
   try {
     const headers = {
       "Content-Type": "application/json",
+      Accept: req.headers.accept || "application/json, text/event-stream",
     };
 
     // Add authentication if configured
