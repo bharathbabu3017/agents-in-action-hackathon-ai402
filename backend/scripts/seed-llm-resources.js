@@ -8,19 +8,22 @@ config();
 const MODEL_CONFIGS = {
   "apac.amazon.nova-micro-v1:0": {
     name: "Nova Micro",
-    description: "Fastest, text-only model - $0.001 for up to 500 tokens",
+    description:
+      "Text-only model with lowest latency and cost. Ideal for fast language tasks, code completion, and reasoning.",
     price: 0.001,
     maxTokens: 500,
   },
   "apac.amazon.nova-lite-v1:0": {
     name: "Nova Lite",
-    description: "Fast multimodal model - $0.002 for up to 500 tokens",
+    description:
+      "Low-cost multimodal model for fast processing of text, image, and video inputs. Great for high-volume applications.",
     price: 0.002,
     maxTokens: 500,
   },
   "apac.amazon.nova-pro-v1:0": {
     name: "Nova Pro",
-    description: "Most capable model - $0.005 for up to 1000 tokens",
+    description:
+      "Highly capable multimodal model with optimal balance of accuracy, speed, and cost. Excels at complex tasks and AI agents.",
     price: 0.005,
     maxTokens: 1000,
   },
@@ -44,7 +47,7 @@ async function seedLLMResources() {
       const resource = new Resource({
         id: resourceId,
         name: config.name,
-        description: `${config.description} - Token-based pricing: $${config.price}/1K input, $${config.price}/1K output (min: $${config.price})`,
+        description: `${config.description}`,
         type: "ai_model",
         category: "llm",
         creatorAddress: creatorAddress,

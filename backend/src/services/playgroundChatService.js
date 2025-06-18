@@ -28,7 +28,7 @@ function createBedrockClient() {
  */
 export async function getMCPTools(mcpResource) {
   try {
-    console.log(`🔍 Getting tools from MCP server: ${mcpResource.originalUrl}`);
+    console.log(`🔍 Getting tools from MCP server: ${mcpResource.name}`);
 
     const headers = {
       "Content-Type": "application/json",
@@ -96,7 +96,7 @@ export async function getMCPTools(mcpResource) {
 }
 
 /**
- * Create system prompt with available tools
+ * Create system prompt with available tools (GENERIC VERSION)
  */
 function createSystemPrompt(mcpTools, mcpServerName) {
   if (!mcpTools || mcpTools.length === 0) {
@@ -106,15 +106,14 @@ function createSystemPrompt(mcpTools, mcpServerName) {
   const toolDescriptions = mcpTools
     .map((tool) => {
       const params = Object.keys(tool.inputSchema?.properties || {}).join(", ");
-      return `- ${tool.name}: ${
-        tool.description || "No description"
-      } (Parameters: ${params})`;
+      const description = tool.description || "No description available";
+      return `- ${tool.name}: ${description} (Parameters: ${params || "none"})`;
     })
     .join("\n");
 
-  return `You are an AI assistant with access to ${mcpServerName} tools. When a user asks questions that require real-time data or specific information that these tools can provide, you should use them.
+  return `You are an AI assistant with access to tools from "${mcpServerName}". When a user asks questions that require real-time data, specific information, or actions that these tools can provide, you should use them.
 
-Available tools from ${mcpServerName}:
+Available tools:
 ${toolDescriptions}
 
 When you need to use a tool, respond with a JSON object in this EXACT format:
@@ -129,12 +128,13 @@ When you need to use a tool, respond with a JSON object in this EXACT format:
   }
 }
 
-IMPORTANT: 
-- Only suggest tool calls for information these specific tools can provide
-- If you can answer without tools, just respond normally
-- Make sure tool names and parameters match exactly what's available
-- Be helpful and informative in your responses
-- For Solana-related questions that require current data, always try to use the available tools`;
+IMPORTANT Guidelines:
+- Only suggest tool calls when you need current/live data or specific functionality these tools provide
+- If you can answer from your general knowledge without needing current data, respond normally
+- Always match tool names and parameters exactly as specified
+- Consider the tool descriptions and parameters carefully before making calls
+- Be helpful and provide comprehensive answers
+- When in doubt about whether to use a tool, consider if the user's question requires real-time or specific data that only the tool can provide`;
 }
 
 /**
