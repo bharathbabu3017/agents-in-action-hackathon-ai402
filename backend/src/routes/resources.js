@@ -22,7 +22,7 @@ router.get("/", async (req, res) => {
 
     const resources = await Resource.find(query)
       .sort({ createdAt: -1 })
-      .select("-mcpAuth.token"); // Don't expose auth tokens
+      .select("-mcpAuth.token -originalUrl"); // Don't expose auth tokens or original URLs
 
     res.json(resources);
   } catch (error) {
@@ -34,8 +34,8 @@ router.get("/", async (req, res) => {
 router.get("/:id", async (req, res) => {
   try {
     const resource = await Resource.findOne({ id: req.params.id }).select(
-      "-mcpAuth.token"
-    ); // Don't expose auth tokens
+      "-mcpAuth.token -originalUrl"
+    ); // Don't expose auth tokens or original URLs
 
     if (!resource) {
       return res.status(404).json({ error: "Resource not found" });
@@ -73,7 +73,12 @@ router.post("/", async (req, res) => {
 
     await resource.save();
 
-    res.status(201).json(resource);
+    // Return the resource without sensitive fields
+    const responseResource = await Resource.findOne({ id: resource.id }).select(
+      "-mcpAuth.token -originalUrl"
+    );
+
+    res.status(201).json(responseResource);
   } catch (error) {
     if (error.code === 11000) {
       res.status(400).json({ error: "Resource with this name already exists" });
