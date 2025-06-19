@@ -75,7 +75,7 @@ function createExactPaymentRequirements(
 }
 
 /**
- * Verifies a payment and handles the response - IMPROVED ERROR HANDLING
+ * Verifies a payment and handles the response - WITH SETTLEMENT
  */
 async function verifyPayment(req, res, paymentRequirements) {
   const payment = req.header("X-PAYMENT");
@@ -127,12 +127,37 @@ async function verifyPayment(req, res, paymentRequirements) {
     }
 
     console.log("✅ Payment verification successful");
+
+    // NOW ACTUALLY SETTLE THE PAYMENT ON BLOCKCHAIN
+    console.log("💳 Settling payment on blockchain...");
+    const settleResponse = await settle(decodedPayment, paymentRequirements[0]);
+    console.log("🔍 Settlement response:", settleResponse);
+
+    if (!settleResponse || settleResponse.error) {
+      console.error("❌ Payment settlement failed:", settleResponse?.error);
+      res.status(402).json({
+        x402Version,
+        error:
+          "Payment settlement failed: " +
+          (settleResponse?.error || "Unknown error"),
+        accepts: paymentRequirements,
+      });
+      return false;
+    }
+
+    console.log("✅ Payment settlement successful!");
+    console.log("💰 Blockchain transaction:", settleResponse.transaction);
+
+    // Add settlement response header
+    const responseHeader = settleResponseHeader(settleResponse);
+    res.setHeader("X-PAYMENT-RESPONSE", responseHeader);
+
     return true;
   } catch (error) {
-    console.error("❌ Payment verification error:", error);
+    console.error("❌ Payment verification/settlement error:", error);
     res.status(402).json({
       x402Version,
-      error: `Payment verification failed: ${error.message || error}`,
+      error: `Payment processing failed: ${error.message || error}`,
       accepts: paymentRequirements,
     });
     return false;
@@ -185,100 +210,75 @@ app.all("/proxy/:resourceId/*", async (req, res) => {
       }
 
       if (method === "tools/call") {
-        console.log("🤖 AI model request - checking payment...");
+        console.log("💰 MCP tools/call request - checking payment...");
 
-        const { messages, temperature, max_tokens, ...otherOptions } = req.body;
+        // For MCP, we expect: { jsonrpc, method, params: { name, arguments } }
+        const { params } = req.body;
 
-        if (!messages || !Array.isArray(messages)) {
+        if (!params || !params.name) {
           return res.status(400).json({
-            error: "Invalid request format",
+            error: "Invalid MCP request format",
             expected:
-              "{ messages: [...], temperature?: number, max_tokens?: number }",
+              "{ jsonrpc: '2.0', method: 'tools/call', params: { name: string, arguments: object } }",
           });
         }
 
-        // Get fixed price for this model (simple!)
-        const fixedPrice = getModelPrice(resource.llmConfig.modelId);
-        const tokenLimit = getTokenLimit(resource.llmConfig.modelId);
+        const toolName = params.name;
 
-        console.log(
-          `💰 Fixed pricing: $${fixedPrice} for up to ${tokenLimit} tokens`
-        );
+        // Get pricing for this specific tool
+        let toolPrice = resource.pricing.defaultAmount;
+        if (
+          resource.pricing.toolPricing &&
+          resource.pricing.toolPricing.has(toolName)
+        ) {
+          toolPrice = resource.pricing.toolPricing.get(toolName);
+        }
 
-        // Create payment requirements with fixed price
+        console.log(`💰 Tool pricing: ${toolName} costs $${toolPrice}`);
+
+        // Create payment requirements
         const baseUrl = `${req.protocol}://${req.get("host")}`;
         const resourceUrl = `${baseUrl}/proxy/${resourceId}/${path}`;
 
         const paymentRequirements = [
           createExactPaymentRequirements(
-            `$${fixedPrice}`, // Fixed price - no calculation needed
+            `$${toolPrice}`,
             "base-sepolia",
             resourceUrl,
             resource.creatorAddress,
-            `${resource.name} - up to ${tokenLimit} tokens`
+            `${resource.name} - ${toolName}`
           ),
         ];
 
-        // Verify payment for fixed amount
+        // Verify payment
         const isValid = await verifyPayment(req, res, paymentRequirements);
         if (!isValid) return;
 
-        console.log("✅ Payment verified, generating LLM response...");
+        console.log("✅ Payment verified, calling MCP tool...");
 
         try {
-          // Call LLM with token limits
-          const llmResponse = await callLLM(
-            resource.llmConfig.modelId,
-            messages,
-            {
-              temperature: temperature || resource.llmConfig.defaultTemperature,
-              maxTokens: max_tokens,
-              ...otherOptions,
-            }
+          // Forward to original MCP server with authentication
+          const { forwardToOriginalAPI } = await import(
+            "./services/proxyService.js"
           );
+          const result = await forwardToOriginalAPI(resource, req);
 
-          console.log(
-            `📊 Token usage: ${llmResponse.usage.totalTokens}/${tokenLimit} tokens used`
-          );
+          // Return MCP result
+          res.json(result);
 
-          // Return response immediately (no settlement needed!)
-          res.json({
-            id: crypto.randomUUID(),
-            object: "chat.completion",
-            created: Math.floor(Date.now() / 1000),
-            model: resource.llmConfig.modelId,
-            choices: [
-              {
-                index: 0,
-                message: {
-                  role: "assistant",
-                  content: llmResponse.text,
-                },
-                finish_reason: llmResponse.usage.withinLimit
-                  ? "stop"
-                  : "length",
-              },
-            ],
-            usage: llmResponse.usage,
-            pricing: llmResponse.pricing,
-          });
-
-          // Simple transaction logging (no settlement complexity)
+          // Log transaction
           const Transaction = (await import("./models/Transaction.js")).default;
           const transaction = new Transaction({
             resourceId: resource.id,
             resourceName: resource.name,
-            fromAddress: "payment_verified", // We don't have payer info without settlement
+            fromAddress: "payment_verified",
             toAddress: resource.creatorAddress,
-            amount: fixedPrice,
-            toolUsed: resource.llmConfig.modelId,
+            amount: toolPrice,
+            toolUsed: toolName,
             requestData: {
               method: req.method,
               path: path,
-              body: {
-                messages: `${messages.length} messages`,
-                tokensUsed: llmResponse.usage.totalTokens,
-              },
+              body: { toolName, arguments: params.arguments },
             },
           });
 
@@ -290,8 +290,7 @@ app.all("/proxy/:resourceId/*", async (req, res) => {
             {
               $inc: {
                 "stats.totalUses": 1,
-                "stats.totalEarnings": fixedPrice,
-                "stats.totalTokensUsed": llmResponse.usage.totalTokens,
+                "stats.totalEarnings": toolPrice,
               },
               $set: {
                 "stats.lastUsed": new Date(),
@@ -299,9 +298,9 @@ app.all("/proxy/:resourceId/*", async (req, res) => {
             }
           );
         } catch (error) {
-          console.error("Error calling LLM:", error);
+          console.error("Error calling MCP tool:", error);
           return res.status(500).json({
-            error: "LLM generation failed",
+            error: "MCP tool call failed",
             message: error.message,
           });
         }

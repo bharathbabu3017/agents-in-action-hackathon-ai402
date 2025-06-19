@@ -106,12 +106,35 @@ const ResourceSchema = new mongoose.Schema(
   }
 );
 
-// Generate proxy URL before saving
+// Generate proxy URL before saving - FIXED VERSION
 ResourceSchema.pre("save", function (next) {
   if (!this.proxyUrl) {
-    this.proxyUrl = `${
-      process.env.PROXY_BASE_URL || "https://ai402proxy.xyz"
-    }/proxy/${this.id}`;
+    const baseProxyUrl = process.env.PROXY_BASE_URL || "https://ai402proxy.xyz";
+
+    // Extract path from original URL
+    let originalPath = "";
+    try {
+      const url = new URL(this.originalUrl);
+      originalPath = url.pathname; // e.g., "/mcp" or "/api/v1"
+    } catch (error) {
+      console.warn(
+        "Invalid originalUrl, using default path:",
+        this.originalUrl
+      );
+      originalPath = "";
+    }
+
+    // Remove leading slash if present since we'll add our own structure
+    if (originalPath.startsWith("/")) {
+      originalPath = originalPath.substring(1);
+    }
+
+    // Generate proxy URL with preserved path
+    if (originalPath) {
+      this.proxyUrl = `${baseProxyUrl}/proxy/${this.id}/${originalPath}`;
+    } else {
+      this.proxyUrl = `${baseProxyUrl}/proxy/${this.id}`;
+    }
   }
   next();
 });
