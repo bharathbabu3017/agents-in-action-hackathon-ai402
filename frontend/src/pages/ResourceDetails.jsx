@@ -442,10 +442,6 @@ try {
                     <span>{resource.stats?.totalUses || 0} uses</span>
                   </div>
                   <div className="flex items-center space-x-1">
-                    <Users className="w-4 h-4" />
-                    <span>{resource.stats?.uniqueUsers || 0} users</span>
-                  </div>
-                  <div className="flex items-center space-x-1">
                     <Calendar className="w-4 h-4" />
                     <span>
                       {resource.stats?.lastUsed
