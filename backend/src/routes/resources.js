@@ -173,4 +173,80 @@ router.get("/:id/stars", async (req, res) => {
   }
 });
 
+/**
+ * @route   POST /api/resources/fetch-mcp-tools
+ * @desc    Fetch tools from an MCP server URL (for form preview)
+ * @access  Public
+ */
+router.post("/fetch-mcp-tools", async (req, res) => {
+  try {
+    const { url, auth } = req.body;
+
+    if (!url) {
+      return res.status(400).json({ error: "URL is required" });
+    }
+
+    // Prepare headers
+    const headers = {
+      "Content-Type": "application/json",
+      Accept: "application/json, text/event-stream",
+    };
+
+    // Add auth headers if provided
+    if (auth && auth.type !== "none" && auth.token) {
+      if (auth.type === "bearer") {
+        headers["Authorization"] = `Bearer ${auth.token}`;
+      } else if (auth.type === "api_key") {
+        const headerName = auth.header || "X-API-Key";
+        headers[headerName] = auth.token;
+      }
+    }
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/list",
+        params: {},
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const text = await response.text();
+    let data;
+
+    // Handle SSE response
+    if (text.includes("data: ")) {
+      const dataLine = text
+        .split("\n")
+        .find((line) => line.startsWith("data: "));
+      if (dataLine) {
+        data = JSON.parse(dataLine.substring(6));
+      }
+    } else {
+      // Handle regular JSON response
+      data = JSON.parse(text);
+    }
+
+    const tools = data.result?.tools || [];
+
+    res.json({
+      success: true,
+      tools,
+      count: tools.length,
+    });
+  } catch (error) {
+    console.error("Error fetching MCP tools:", error);
+    res.status(500).json({
+      error: "Failed to fetch MCP tools",
+      message: error.message,
+    });
+  }
+});
+
 export default router;
