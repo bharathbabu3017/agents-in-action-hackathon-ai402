@@ -51,6 +51,10 @@ const Playground = () => {
   const [selectedMCP, setSelectedMCP] = useState(null);
   const [loadingResources, setLoadingResources] = useState(true);
 
+  // Tools from MCP server
+  const [mcpTools, setMcpTools] = useState([]);
+  const [loadingTools, setLoadingTools] = useState(false);
+
   // Payment modal
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [pendingToolCall, setPendingToolCall] = useState(null);
@@ -70,12 +74,22 @@ const Playground = () => {
 
   useEffect(() => {
     if (isPreselected && availableMCPs.length > 0) {
-      const preselectedMCP = availableMCPs.find((mcp) => mcp.id === resourceId);
+      const preselectedMCP = availableMCPs.find(
+        (mcp) => mcp.id === resourceId || mcp._id === resourceId
+      );
       if (preselectedMCP) {
         setSelectedMCP(preselectedMCP);
       }
     }
   }, [resourceId, availableMCPs, isPreselected]);
+
+  useEffect(() => {
+    if (selectedMCP) {
+      loadMCPTools(selectedMCP);
+    } else {
+      setMcpTools([]);
+    }
+  }, [selectedMCP]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -105,6 +119,44 @@ const Playground = () => {
       console.error("Failed to load resources:", error);
     } finally {
       setLoadingResources(false);
+    }
+  };
+
+  const loadMCPTools = async (mcpServer) => {
+    if (!mcpServer || !mcpServer.proxyUrl) return;
+
+    setLoadingTools(true);
+    setMcpTools([]);
+
+    try {
+      const response = await fetch(`${mcpServer.proxyUrl}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json, text/event-stream",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/list",
+          params: {},
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        // JSON-RPC response format: { jsonrpc, id, result: { tools: [...] } }
+        const tools = data.result?.tools || [];
+        setMcpTools(tools);
+      } else {
+        console.error("Failed to fetch tools:", response.statusText);
+        setMcpTools([]);
+      }
+    } catch (error) {
+      console.error("Error fetching MCP tools:", error);
+      setMcpTools([]);
+    } finally {
+      setLoadingTools(false);
     }
   };
 
@@ -508,19 +560,32 @@ const Playground = () => {
             </div>
 
             {/* Available Tools */}
-            {selectedMCP &&
-              selectedMCP.mcpTools &&
-              selectedMCP.mcpTools.length > 0 && (
-                <div className="bg-white rounded-lg border border-gray-200 flex-1 flex flex-col min-h-0">
-                  <div className="p-4 border-b border-gray-100 flex-shrink-0">
-                    <h3 className="font-semibold text-gray-900 flex items-center">
-                      <Zap className="w-4 h-4 mr-2 text-blue-600" />
-                      Available Tools ({selectedMCP.mcpTools.length})
-                    </h3>
-                  </div>
-                  <div className="flex-1 overflow-y-auto p-4 min-h-0">
+            {selectedMCP && (
+              <div className="bg-white rounded-lg border border-gray-200 flex-1 flex flex-col min-h-0">
+                <div className="p-4 border-b border-gray-100 flex-shrink-0">
+                  <h3 className="font-semibold text-gray-900 flex items-center">
+                    <Zap className="w-4 h-4 mr-2 text-blue-600" />
+                    Available Tools
+                    {loadingTools ? (
+                      <Loader className="w-4 h-4 animate-spin ml-2" />
+                    ) : (
+                      mcpTools.length > 0 && ` (${mcpTools.length})`
+                    )}
+                  </h3>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 min-h-0">
+                  {loadingTools ? (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="text-center">
+                        <Loader className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-600" />
+                        <p className="text-sm text-gray-600">
+                          Loading tools...
+                        </p>
+                      </div>
+                    </div>
+                  ) : mcpTools.length > 0 ? (
                     <div className="space-y-3">
-                      {selectedMCP.mcpTools.map((tool, index) => (
+                      {mcpTools.map((tool, index) => (
                         <div
                           key={tool._id || index}
                           className="border border-gray-100 rounded-lg p-3 hover:bg-gray-50 transition-colors"
@@ -563,15 +628,24 @@ const Playground = () => {
                               )}
                             </div>
                             <div className="ml-2 text-xs text-gray-400">
-                              ${selectedMCP.pricing.defaultAmount}
+                              $
+                              {selectedMCP.pricing.toolPricing?.[tool.name] ||
+                                selectedMCP.pricing.defaultAmount}
                             </div>
                           </div>
                         </div>
                       ))}
                     </div>
-                  </div>
+                  ) : (
+                    <div className="flex items-center justify-center py-8">
+                      <p className="text-sm text-gray-500">
+                        No tools available
+                      </p>
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
+            )}
           </div>
 
           {/* Chat Interface */}
