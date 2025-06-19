@@ -4,8 +4,7 @@
     "type": "module",
     "scripts": {
         "dev": "nodemon src/app.js",
-        "start": "node src/app.js",
-        "seed:llm": "node scripts/seed-llm-resources.js"
+        "start": "node src/app.js"
     },
     "dependencies": {
         "@aws-sdk/client-bedrock-runtime": "^3.540.0",
