@@ -416,7 +416,7 @@ const Playground = () => {
                 </h1>
               </div>
               <button
-                onClick={() => window.history.back()}
+                onClick={() => (window.location.href = "/marketplace")}
                 className="flex items-center text-gray-600 hover:text-gray-800 text-sm"
               >
                 <ArrowLeft className="w-4 h-4 mr-1" />
