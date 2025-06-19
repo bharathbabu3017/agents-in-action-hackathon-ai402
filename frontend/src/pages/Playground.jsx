@@ -100,7 +100,10 @@ const Playground = () => {
       const response = await fetch(`${API_BASE_URL}/api/resources`);
       const resources = await response.json();
 
-      const llms = resources.filter((r) => r.type === "ai_model");
+      // Only show Bedrock models in LLM dropdown (not user-submitted AI models)
+      const llms = resources.filter(
+        (r) => r.type === "ai_model" && r.llmConfig?.provider === "bedrock"
+      );
       const mcps = resources.filter((r) => r.type === "mcp_server");
 
       setAvailableLLMs(llms);
