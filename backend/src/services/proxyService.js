@@ -5,10 +5,18 @@ export async function forwardToOriginalAPI(resource, req) {
       Accept: req.headers.accept || "application/json, text/event-stream",
     };
 
-    // Add authentication if configured
-    if (resource.mcpAuth.type === "bearer" && resource.mcpAuth.token) {
+    // Forward user-provided authentication headers (for user's own API keys)
+    if (req.headers["x-api-key"]) {
+      headers["X-API-Key"] = req.headers["x-api-key"];
+    }
+    if (req.headers["authorization"]) {
+      headers["Authorization"] = req.headers["authorization"];
+    }
+
+    // Add server-stored authentication if configured (for server's own auth)
+    if (resource.mcpAuth?.type === "bearer" && resource.mcpAuth.token) {
       headers["Authorization"] = `Bearer ${resource.mcpAuth.token}`;
-    } else if (resource.mcpAuth.type === "api_key" && resource.mcpAuth.token) {
+    } else if (resource.mcpAuth?.type === "api_key" && resource.mcpAuth.token) {
       const headerName = resource.mcpAuth.header || "X-API-Key";
       headers[headerName] = resource.mcpAuth.token;
     }
