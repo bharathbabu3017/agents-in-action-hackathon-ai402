@@ -17,6 +17,7 @@ import {
   Check,
   ArrowRight,
   Loader,
+  Plus,
 } from "lucide-react";
 
 const Marketplace = () => {
@@ -221,6 +222,13 @@ const Marketplace = () => {
             </div>
             <div className="flex items-center space-x-4">
               <button
+                onClick={() => (window.location.href = "/list-resource")}
+                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                List New Resource
+              </button>
+              <button
                 onClick={() => (window.location.href = "/playground")}
                 className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
               >
@@ -419,15 +427,16 @@ const Marketplace = () => {
                     {resource.description}
                   </p>
 
-                  {/* Add AWS Bedrock badge for AI models */}
-                  {resource.type === "ai_model" && (
-                    <div className="mt-3">
-                      <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-orange-50 text-orange-700 rounded-full border border-orange-200">
-                        <span className="w-2 h-2 bg-orange-500 rounded-full mr-1"></span>
-                        Powered by AWS Bedrock
-                      </span>
-                    </div>
-                  )}
+                  {/* Add AWS Bedrock badge only for Bedrock models */}
+                  {resource.type === "ai_model" &&
+                    resource.llmConfig?.provider === "bedrock" && (
+                      <div className="mt-3">
+                        <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-orange-50 text-orange-700 rounded-full border border-orange-200">
+                          <span className="w-2 h-2 bg-orange-500 rounded-full mr-1"></span>
+                          Powered by AWS Bedrock
+                        </span>
+                      </div>
+                    )}
                 </div>
 
                 {/* Card Body */}
