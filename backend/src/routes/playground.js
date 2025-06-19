@@ -221,7 +221,7 @@ router.post("/chat", async (req, res) => {
             ? getExplorerUrl(txDetails.txHash, txDetails.network)
             : null;
 
-          // Log transaction
+          // Log transaction with proper blockchain details
           const transaction = new Transaction({
             resourceId: mcpResource.id,
             resourceName: mcpResource.name,
@@ -229,15 +229,25 @@ router.post("/chat", async (req, res) => {
             toAddress: mcpResource.creatorAddress,
             amount: pricing.amount,
             toolUsed: toolName,
+            txHash: txDetails.txHash, // ✅ Proper field
+            blockNumber: txDetails.blockNumber, // ✅ Proper field
+            gasUsed: txDetails.gasUsed, // ✅ Proper field
+            status: "completed",
             requestData: {
               sessionId,
               toolParameters: parameters,
               llmModel: llmModelId,
-              blockchainTxHash: txDetails.txHash,
-              explorerUrl: explorerUrl,
             },
           });
+
           await transaction.save();
+
+          console.log("💾 Saved transaction with blockchain details:", {
+            txHash: txDetails.txHash,
+            blockNumber: txDetails.blockNumber,
+            gasUsed: txDetails.gasUsed,
+            payer: txDetails.payer,
+          });
 
           // Update resource stats
           await Resource.findOneAndUpdate(

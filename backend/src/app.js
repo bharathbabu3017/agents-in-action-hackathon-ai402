@@ -152,6 +152,14 @@ async function verifyPayment(req, res, paymentRequirements) {
     const responseHeader = settleResponseHeader(settleResponse);
     res.setHeader("X-PAYMENT-RESPONSE", responseHeader);
 
+    // Store settlement details for later use in transaction saving
+    req.settlementDetails = {
+      txHash: settleResponse.transaction?.hash,
+      blockNumber: settleResponse.transaction?.blockNumber,
+      gasUsed: settleResponse.transaction?.gasUsed,
+      fromAddress: settleResponse.payer || response.payer,
+    };
+
     return true;
   } catch (error) {
     console.error("❌ Payment verification/settlement error:", error);
@@ -266,15 +274,19 @@ app.all("/proxy/:resourceId/*", async (req, res) => {
           // Return MCP result
           res.json(result);
 
-          // Log transaction
+          // Log transaction with settlement details
           const Transaction = (await import("./models/Transaction.js")).default;
           const transaction = new Transaction({
             resourceId: resource.id,
             resourceName: resource.name,
-            fromAddress: "payment_verified",
+            fromAddress: req.settlementDetails?.fromAddress || "unknown",
             toAddress: resource.creatorAddress,
             amount: toolPrice,
             toolUsed: toolName,
+            txHash: req.settlementDetails?.txHash,
+            blockNumber: req.settlementDetails?.blockNumber,
+            gasUsed: req.settlementDetails?.gasUsed,
+            status: "completed",
             requestData: {
               method: req.method,
               path: path,
@@ -283,6 +295,11 @@ app.all("/proxy/:resourceId/*", async (req, res) => {
           });
 
           await transaction.save();
+          console.log("💾 Saved transaction with details:", {
+            txHash: req.settlementDetails?.txHash,
+            blockNumber: req.settlementDetails?.blockNumber,
+            fromAddress: req.settlementDetails?.fromAddress,
+          });
 
           // Update resource stats
           await Resource.findOneAndUpdate(
@@ -396,15 +413,19 @@ app.all("/proxy/:resourceId/*", async (req, res) => {
           pricing: llmResponse.pricing,
         });
 
-        // Simple transaction logging (no settlement complexity)
+        // Simple transaction logging with settlement details
         const Transaction = (await import("./models/Transaction.js")).default;
         const transaction = new Transaction({
           resourceId: resource.id,
           resourceName: resource.name,
-          fromAddress: "payment_verified", // We don't have payer info without settlement
+          fromAddress: req.settlementDetails?.fromAddress || "unknown",
           toAddress: resource.creatorAddress,
           amount: fixedPrice,
           toolUsed: resource.llmConfig.modelId,
+          txHash: req.settlementDetails?.txHash,
+          blockNumber: req.settlementDetails?.blockNumber,
+          gasUsed: req.settlementDetails?.gasUsed,
+          status: "completed",
           requestData: {
             method: req.method,
             path: path,
@@ -416,6 +437,11 @@ app.all("/proxy/:resourceId/*", async (req, res) => {
         });
 
         await transaction.save();
+        console.log("💾 Saved transaction with details:", {
+          txHash: req.settlementDetails?.txHash,
+          blockNumber: req.settlementDetails?.blockNumber,
+          fromAddress: req.settlementDetails?.fromAddress,
+        });
 
         // Update resource stats
         await Resource.findOneAndUpdate(

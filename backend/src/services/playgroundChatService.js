@@ -379,28 +379,47 @@ export async function generateFinalResponse(
 }
 
 /**
- * Extract transaction details from settlement response (FIXED)
+ * Extract transaction details from settlement response (ENHANCED)
  */
 export function extractTransactionDetails(settleResponse) {
   console.log("🔍 Settlement response structure:", Object.keys(settleResponse));
 
-  // Try different possible field names for transaction hash
+  // Settlement response contains blockchain transaction details
+  const transaction = settleResponse.transaction;
+
+  if (typeof transaction === "string") {
+    // If transaction is just a hash string
+    return {
+      txHash: transaction,
+      blockNumber: null,
+      gasUsed: null,
+      network: settleResponse.network || "base-sepolia",
+      payer: settleResponse.payer,
+    };
+  } else if (typeof transaction === "object" && transaction) {
+    // If transaction is an object with details
+    return {
+      txHash: transaction.hash || transaction.transactionHash,
+      blockNumber: transaction.blockNumber,
+      gasUsed: transaction.gasUsed,
+      network: settleResponse.network || "base-sepolia",
+      payer: settleResponse.payer,
+    };
+  }
+
+  // Fallback - try different field names
   const txHash =
-    settleResponse.transaction || // This is the correct field!
     settleResponse.transactionHash ||
     settleResponse.txHash ||
-    settleResponse.hash ||
-    settleResponse.receipt?.transactionHash;
-
-  const network = settleResponse.network || "base-sepolia";
-  const payer = settleResponse.payer || settleResponse.from;
+    settleResponse.hash;
 
   console.log(`🔗 Found transaction hash: ${txHash}`);
 
   return {
     txHash,
-    network,
-    payer,
-    fullResponse: settleResponse,
+    blockNumber: settleResponse.blockNumber,
+    gasUsed: settleResponse.gasUsed,
+    network: settleResponse.network || "base-sepolia",
+    payer: settleResponse.payer,
   };
 }

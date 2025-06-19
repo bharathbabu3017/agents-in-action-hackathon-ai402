@@ -249,4 +249,47 @@ router.post("/fetch-mcp-tools", async (req, res) => {
   }
 });
 
+/**
+ * @route   GET /api/resources/:id/transactions
+ * @desc    Get transaction history for a resource
+ * @access  Public
+ */
+router.get("/:id/transactions", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { page = 1, limit = 10 } = req.query;
+
+    const resource = await Resource.findOne({ id }).select("id name");
+    if (!resource) {
+      return res.status(404).json({ error: "Resource not found" });
+    }
+
+    // Import Transaction model
+    const { default: Transaction } = await import("../models/Transaction.js");
+
+    const transactions = await Transaction.find({ resourceId: id })
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .select("-requestData"); // Don't expose full request data for privacy
+
+    const totalTransactions = await Transaction.countDocuments({
+      resourceId: id,
+    });
+
+    res.json({
+      transactions,
+      totalTransactions,
+      totalPages: Math.ceil(totalTransactions / limit),
+      currentPage: parseInt(page),
+    });
+  } catch (error) {
+    console.error("Get transactions error:", error);
+    res.status(500).json({
+      error: "Failed to get transactions",
+      message: error.message,
+    });
+  }
+});
+
 export default router;
