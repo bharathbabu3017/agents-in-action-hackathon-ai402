@@ -519,24 +519,6 @@ const Marketplace = () => {
                         </div>
                       </div>
                     )}
-
-                  {/* Additional Info */}
-                  <div className="flex items-center justify-between text-xs text-gray-500">
-                    <div className="flex items-center space-x-1">
-                      <Clock className="w-3 h-3" />
-                      <span>
-                        {resource.stats?.lastUsed
-                          ? new Date(
-                              resource.stats.lastUsed
-                            ).toLocaleDateString()
-                          : "Never used"}
-                      </span>
-                    </div>
-                    <div className="flex items-center space-x-1">
-                      <Users className="w-3 h-3" />
-                      <span>{resource.stats?.uniqueUsers || 0} users</span>
-                    </div>
-                  </div>
                 </div>
 
                 {/* Card Footer */}
@@ -546,9 +528,9 @@ const Marketplace = () => {
                       onClick={() =>
                         (window.location.href = `/playground/${resource.id}`)
                       }
-                      className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center space-x-2 font-medium"
+                      className="flex-1 bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center space-x-1.5 text-sm font-medium"
                     >
-                      <Play className="w-4 h-4" />
+                      <Play className="w-3 h-3" />
                       <span>Try in Playground</span>
                     </button>
                   )}
@@ -559,10 +541,10 @@ const Marketplace = () => {
                     }
                     className={`${
                       resource.type === "mcp_server" ? "flex-1" : "w-full"
-                    } border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2 font-medium`}
+                    } border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center space-x-1.5 text-sm font-medium`}
                   >
                     <span>View Details</span>
-                    <ArrowRight className="w-4 h-4" />
+                    <ArrowRight className="w-3 h-3" />
                   </button>
                 </div>
               </div>
