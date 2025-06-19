@@ -7,26 +7,24 @@ const router = express.Router();
 // Get all resources for marketplace
 router.get("/", async (req, res) => {
   try {
-    const { type, category, search } = req.query;
+    const { type, category } = req.query;
 
-    let query = { isActive: true };
+    // Build filter
+    const filter = {};
+    if (type) filter.type = type;
+    if (category) filter.category = category;
 
-    if (type) query.type = type;
-    if (category) query.category = category;
-    if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: "i" } },
-        { description: { $regex: search, $options: "i" } },
-      ];
-    }
-
-    const resources = await Resource.find(query)
-      .sort({ createdAt: -1 })
-      .select("-mcpAuth.token -originalUrl"); // Don't expose auth tokens or original URLs
+    const resources = await Resource.find(filter)
+      .select("-mcpAuth.token") // Don't expose auth tokens
+      .sort({ createdAt: -1 }); // Most recent first
 
     res.json(resources);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("Error fetching resources:", error);
+    res.status(500).json({
+      error: "Failed to fetch resources",
+      message: error.message,
+    });
   }
 });
 
@@ -105,6 +103,73 @@ router.get("/:id/stats", async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * @route   POST /api/resources/:id/star
+ * @desc    Add a star to a resource
+ * @access  Public
+ */
+router.post("/:id/star", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const resource = await Resource.findOneAndUpdate(
+      { id },
+      { $inc: { starCount: 1 } },
+      { new: true }
+    );
+
+    if (!resource) {
+      return res.status(404).json({
+        error: "Resource not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      resourceId: resource.id,
+      resourceName: resource.name,
+      starCount: resource.starCount,
+    });
+  } catch (error) {
+    console.error("Add star error:", error);
+    res.status(500).json({
+      error: "Failed to add star",
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * @route   GET /api/resources/:id/stars
+ * @desc    Get star count for a resource
+ * @access  Public
+ */
+router.get("/:id/stars", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const resource = await Resource.findOne({ id }).select("id name starCount");
+
+    if (!resource) {
+      return res.status(404).json({
+        error: "Resource not found",
+      });
+    }
+
+    res.json({
+      resourceId: resource.id,
+      resourceName: resource.name,
+      starCount: resource.starCount,
+    });
+  } catch (error) {
+    console.error("Get stars error:", error);
+    res.status(500).json({
+      error: "Failed to get star count",
+      message: error.message,
+    });
   }
 });
 

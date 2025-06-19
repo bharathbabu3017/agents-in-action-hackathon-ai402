@@ -96,6 +96,11 @@ const ResourceSchema = new mongoose.Schema(
       totalInputTokens: { type: Number, default: 0 },
       totalOutputTokens: { type: Number, default: 0 },
     },
+    starCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     isActive: {
       type: Boolean,
       default: true,
