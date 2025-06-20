@@ -1,0 +1,26 @@
+{
+  "name": "cdp-agentkit-x402-flow",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "chatbot.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "NODE_OPTIONS='--no-warnings' node ./chatbot.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@coinbase/agentkit": "^0.8.2",
+    "@coinbase/agentkit-langchain": "^0.3.0",
+    "@langchain/langgraph": "^0.2.21",
+    "@langchain/openai": "^0.3.14",
+    "@langchain/core": "^0.3.19",
+    "dotenv": "^16.4.5",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}
