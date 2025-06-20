@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import { config } from "dotenv";
-import Resource from "../../../src/models/Resource.js";
+import Resource from "../src/models/Resource.js";
 
 config();
 

@@ -21,29 +21,6 @@ const MCP_SERVERS = [
       type: "none", // Public MCP server
     },
   },
-  {
-    name: "Authenticated MCP Test Server",
-    description:
-      "A test MCP server that requires API key authentication. Provides weather, calculator, and time tools for testing x402 payment flows.",
-    originalUrl: "http://localhost:3002/mcp",
-    creatorAddress: "0xe8faD77E45dfb4127d4b484a85cc6047CF012935",
-    category: "development",
-    tags: ["test", "authentication", "demo", "weather", "calculator", "time"],
-    pricing: {
-      model: "per_tool", // Different pricing per tool
-      defaultAmount: 0.001,
-      toolPricing: new Map([
-        ["get_weather", 0.001], // $0.001 for weather
-        ["calculate", 0.0005], // $0.0005 for calculations
-        ["get_time", 0.0002], // $0.0002 for time
-      ]),
-    },
-    mcpAuth: {
-      type: "api_key",
-      token: "test-api-key-123", // Proxy will use this automatically
-      header: "X-API-Key",
-    },
-  },
 ];
 
 async function seedMCPResources() {
