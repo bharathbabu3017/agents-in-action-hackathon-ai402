@@ -22,15 +22,15 @@ export const MODEL_CONFIGS = {
     name: "Nova Lite",
     description: "Fast multimodal model",
     price: 0.002, // $0.002 fixed price
-    maxTokens: 500, // Up to 500 tokens included
-    tokenLimit: 500,
+    maxTokens: 1000, // Up to 1000 tokens included - FIXED
+    tokenLimit: 1000, // FIXED to match seeded config
   },
   "apac.amazon.nova-pro-v1:0": {
     name: "Nova Pro",
     description: "Most capable model",
     price: 0.005, // $0.005 fixed price
-    maxTokens: 1000, // Up to 1000 tokens included (premium)
-    tokenLimit: 1000,
+    maxTokens: 2000, // Up to 2000 tokens included - FIXED
+    tokenLimit: 2000, // FIXED to match seeded config
   },
 };
 
