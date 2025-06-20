@@ -871,8 +871,18 @@ const LandingPage = () => {
             </div>
           </div>
           <div className="text-center text-sm text-gray-500">
-            © 2025 AI402 Platform. Enabling the x402-powered AI economy with
-            live tool discovery. Built for Coinbase Agents in Action Hackathon.
+            © 2025 AI402 Platform. Monetize your MCP servers, AI models, and
+            APIs with x402 payments.
+          </div>
+          <div className="text-center text-sm text-gray-500">
+            Built with ❤️ by{" "}
+            <a
+              href="https://twitter.com/bharathbabu3017"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              @bharathbabu3017
+            </a>
           </div>
         </div>
       </footer>
