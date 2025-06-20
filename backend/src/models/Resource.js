@@ -116,6 +116,10 @@ const ResourceSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    documentation: {
+      type: String,
+      default: "",
+    },
   },
   {
     timestamps: true,

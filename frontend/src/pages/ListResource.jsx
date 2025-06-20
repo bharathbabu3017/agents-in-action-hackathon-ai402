@@ -25,6 +25,7 @@ const ListResource = () => {
     category: "general",
     creatorAddress: "",
     originalUrl: "",
+    documentation: "",
     pricing: {
       model: "per_call",
       defaultAmount: 0.001,
@@ -77,6 +78,13 @@ const ListResource = () => {
       current[keys[keys.length - 1]] = value;
       return newData;
     });
+  };
+
+  const getExamplePlaceholder = (type) => {
+    if (type === "api") {
+      return '{"method": "POST", "url": "https://api.example.com/endpoint", "body": {"key": "value"}}';
+    }
+    return '{"model": "gpt-4o", "messages": [{"role": "user", "content": "Hello!"}]}';
   };
 
   const fetchMCPTools = async (url) => {
@@ -277,6 +285,135 @@ const ListResource = () => {
     }
   };
 
+  const getDocumentationPlaceholder = (type) => {
+    if (type === "mcp_server") {
+      return `## MCP Server Tools Guide
+
+### Available Tools:
+This server provides several tools for different tasks. Below are usage examples and best practices.
+
+### Tool: search
+Use this tool to search for information on any topic.
+
+Example usage:
+\`\`\`json
+{
+  "name": "search",
+  "arguments": {
+    "query": "how to create a token on Solana",
+    "limit": 5
+  }
+}
+\`\`\`
+
+### Tool: web_scrape
+Extract content from web pages.
+
+Example usage:
+\`\`\`json
+{
+  "name": "web_scrape", 
+  "arguments": {
+    "url": "https://example.com",
+    "selector": "article"
+  }
+}
+\`\`\`
+
+### For AgentKit Integration:
+Tell the agent any of these commands:
+- "Pay and search for information about [topic]"
+- "Pay and scrape content from [URL]" 
+- "Pay and use the MCP server to [describe what you want]"
+
+### Best Practices:
+- Be specific in your search queries
+- Use appropriate limits to avoid overwhelming responses
+- Check tool schemas for all available parameters
+
+### Notes:
+- Tools are called using JSON-RPC format
+- Most tools require payment except tools/list
+- Rate limit: 100 calls per minute`;
+    } else if (type === "api") {
+      return `## How to use this API
+
+### Example Request:
+\`\`\`json
+{
+  "message": "Hello world",
+  "timestamp": "2024-01-01T00:00:00Z"
+}
+\`\`\`
+
+### Example Response:
+\`\`\`json
+{
+  "status": "success",
+  "response": "Message received!",
+  "id": "12345"
+}
+\`\`\`
+
+### Required Fields:
+- \`message\` (string): The message to send
+- \`timestamp\` (string, optional): ISO timestamp
+
+### For AgentKit Integration:
+To use with CDP AgentKit, tell the agent:
+"Pay and make a POST request to this API with message field containing 'Hello from AgentKit'"
+
+### Notes:
+- All requests must be POST
+- Content-Type: application/json
+- Rate limit: 100 requests per minute`;
+    } else {
+      return `## AI Model Usage
+
+### Example Request:
+\`\`\`json
+{
+  "messages": [
+    {"role": "user", "content": "Hello! How are you?"}
+  ],
+  "temperature": 0.7,
+  "max_tokens": 150
+}
+\`\`\`
+
+### Example Response:
+\`\`\`json
+{
+  "choices": [
+    {
+      "message": {
+        "role": "assistant", 
+        "content": "Hello! I'm doing well, thank you for asking. How can I help you today?"
+      }
+    }
+  ],
+  "usage": {
+    "total_tokens": 45
+  }
+}
+\`\`\`
+
+### Required Fields:
+- \`messages\` (array): Array of message objects with role and content
+- \`temperature\` (number, optional): Controls randomness (0.0 to 1.0)
+- \`max_tokens\` (number, optional): Maximum response length
+
+### For AgentKit Integration:
+To use with CDP AgentKit, tell the agent:
+"Pay and ask the AI to respond to: [your question here]"
+
+### Notes:
+- Supports OpenAI-compatible format
+- Default temperature: 0.7
+- Default max_tokens: 1000`;
+    }
+  };
+
   if (success) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -380,7 +517,6 @@ const ListResource = () => {
               ))}
             </div>
           </div>
-
           {/* Basic Information */}
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">
@@ -552,7 +688,6 @@ const ListResource = () => {
               </div>
             )}
           </div>
-
           {/* Authentication Configuration - For ALL resource types */}
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">
@@ -621,7 +756,6 @@ const ListResource = () => {
               )}
             </div>
           </div>
-
           {/* Pricing Configuration */}
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">
@@ -736,6 +870,36 @@ const ListResource = () => {
                 </div>
               )}
           </div>
+          {/* Usage Instructions */}
+          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">
+              Usage Instructions (Recommended)
+            </h2>
+            <p className="text-sm text-gray-600 mb-4">
+              {formData.type === "mcp_server"
+                ? "Help users understand how to use your MCP server tools effectively. Include tool examples, best practices, and AgentKit instructions."
+                : "Help users understand how to use your API. Include required fields, example requests, and AgentKit instructions."}
+            </p>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Documentation (Markdown supported)
+              </label>
+              <textarea
+                value={formData.documentation}
+                onChange={(e) =>
+                  handleInputChange("documentation", e.target.value)
+                }
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
+                rows={12}
+                placeholder={getDocumentationPlaceholder(formData.type)}
+              />
+              <p className="text-xs text-gray-500 mt-2">
+                Use Markdown to format your documentation. This will help users
+                understand how to integrate with your API.
+              </p>
+            </div>
+          </div>
 
           {/* Error/Success Messages */}
           {error && (
@@ -744,7 +908,6 @@ const ListResource = () => {
               <span className="text-red-700">{error}</span>
             </div>
           )}
-
           {/* Submit Button */}
           <div className="flex items-center justify-end space-x-4">
             <button

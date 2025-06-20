@@ -27,6 +27,7 @@ import {
   CheckCircle,
   RefreshCw,
 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 
 const ResourceDetails = () => {
   const { id } = useParams();
@@ -42,6 +43,12 @@ const ResourceDetails = () => {
   const [mcpTools, setMcpTools] = useState([]);
   const [loadingTools, setLoadingTools] = useState(false);
   const [toolsError, setToolsError] = useState("");
+
+  const [apiTest, setApiTest] = useState({
+    request: "",
+    response: "",
+    loading: false,
+  });
 
   const API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
@@ -272,8 +279,60 @@ ${body}
   const getx402AxiosExample = () => {
     if (!resource) return "";
 
+    // Try to extract example from documentation
+    let requestBody = "{}";
+    if (resource.documentation) {
+      const jsonMatch = resource.documentation.match(
+        /```json\s*(\{[\s\S]*?\})\s*```/
+      );
+      if (jsonMatch) {
+        requestBody = jsonMatch[1];
+      }
+    }
+
+    // Fallback to defaults
+    if (requestBody === "{}") {
+      if (resource.type === "ai_model") {
+        requestBody = `{
+  messages: [
+    { role: "user", content: "Hello!" }
+  ],
+  temperature: 0.7,
+  max_tokens: 1000
+}`;
+      } else {
+        requestBody = `{
+  // Check the Documentation tab for required fields
+}`;
+      }
+    }
+
+    return `import { withPaymentInterceptor } from 'x402-axios';
+import { privateKeyToAccount } from 'viem/accounts';
+import axios from 'axios';
+
+const account = privateKeyToAccount(process.env.PRIVATE_KEY);
+const api = withPaymentInterceptor(axios.create(), account);
+
+// Make the API call
+const response = await api.post("${resource.proxyUrl}", ${requestBody});
+console.log(response.data);`;
+  };
+
+  const getSpecificx402Example = () => {
+    if (!resource) return "";
+
     let requestBody = "";
-    if (resource.type === "mcp_server") {
+    let description = "";
+
+    if (resource.apiDocumentation?.exampleRequest) {
+      requestBody = JSON.stringify(
+        resource.apiDocumentation.exampleRequest,
+        null,
+        2
+      );
+      description = `// ${resource.name} - ${resource.description}`;
+    } else if (resource.type === "mcp_server") {
       requestBody = `{
   jsonrpc: "2.0",
   id: 1,
@@ -293,40 +352,71 @@ ${body}
 }`;
     } else {
       requestBody = `{
-  // Your API request data
+  // Check the API documentation above for required fields
 }`;
     }
 
-    return `import { withPaymentInterceptor } from 'x402-axios';
-import { createWalletClient, custom } from 'viem';
-import { baseSepolia } from 'viem/chains';
+    return `${description}
+import { withPaymentInterceptor } from 'x402-axios';
+import { privateKeyToAccount } from 'viem/accounts';
 import axios from 'axios';
 
-// Create wallet client (browser wallet)
-const walletClient = createWalletClient({
-  account: "0x...", // Your wallet address
-  transport: custom(window.ethereum),
-  chain: baseSepolia,
-});
+const account = privateKeyToAccount(process.env.PRIVATE_KEY);
+const api = withPaymentInterceptor(axios.create(), account);
 
-// Create axios instance with payment interceptor
-const api = withPaymentInterceptor(
-  axios.create({
-    baseURL: "${API_BASE_URL}",
-  }),
-  walletClient
-);
+// Make the API call
+const response = await api.post("${resource.proxyUrl}", ${requestBody});
+console.log(response.data);`;
+  };
 
-// Make paid API call
-try {
-  const response = await api.post("${resource.proxyUrl.replace(
-    API_BASE_URL,
-    ""
-  )}", ${requestBody});
-  console.log(response.data);
-} catch (error) {
-  console.error('API call failed:', error);
-}`;
+  const getAgentKitExample = () => {
+    return `// For CDP AgentKit integration
+// In your agent conversation, use:
+
+"Pay and make a POST request to ${resource.proxyUrl}"
+
+// For the send-message API example:
+"Pay and make a POST request to ${
+      resource.proxyUrl
+    } with message field containing 'sent by agentkit bot'"
+
+// For custom APIs with specific fields:
+"Pay and make a POST request to ${resource.proxyUrl} with the following data: ${
+      resource.apiDocumentation?.exampleRequest
+        ? JSON.stringify(resource.apiDocumentation.exampleRequest)
+        : '{your: "data", here: "..."}'
+    }"
+
+// The AgentKit will automatically handle:
+// 1. Payment processing via x402
+// 2. Request formatting
+// 3. Response handling`;
+  };
+
+  const testAPI = async () => {
+    setApiTest({ ...apiTest, loading: true });
+
+    try {
+      // Make actual API call with test data
+      const response = await fetch(resource.proxyUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: apiTest.request,
+      });
+
+      const data = await response.json();
+      setApiTest({
+        ...apiTest,
+        response: JSON.stringify(data, null, 2),
+        loading: false,
+      });
+    } catch (error) {
+      setApiTest({
+        ...apiTest,
+        response: `Error: ${error.message}`,
+        loading: false,
+      });
+    }
   };
 
   if (loading) {
@@ -479,6 +569,7 @@ try {
                   : []),
                 { id: "integration", label: "Integration", icon: Code },
                 { id: "transactions", label: "Transactions", icon: Activity },
+                { id: "documentation", label: "Documentation", icon: Code },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -958,16 +1049,9 @@ try {
                   </div>
                   <div className="text-center">
                     <div className="text-2xl font-bold text-gray-900 mb-1">
-                      {resource.pricing?.model === "per_tool" &&
-                      resource.pricing?.toolPricing &&
-                      Object.keys(resource.pricing.toolPricing).length > 0
-                        ? `${Math.min(
-                            ...Object.values(resource.pricing.toolPricing)
-                          )} - ${Math.max(
-                            ...Object.values(resource.pricing.toolPricing)
-                          )}`
-                        : resource.pricing?.defaultAmount || 0}{" "}
-                      USDC
+                      {resource.pricing?.model === "per_tool"
+                        ? "Variable"
+                        : `${resource.pricing?.defaultAmount || 0} USDC`}
                     </div>
                     <div className="text-sm text-gray-500">
                       {resource.pricing?.model === "per_tool"
@@ -1108,6 +1192,119 @@ try {
                 </div>
               </div>
             </div>
+
+            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200">
+              <h3 className="text-lg font-semibold mb-4">Try It Out</h3>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Request Body
+                  </label>
+                  <textarea
+                    value={apiTest.request}
+                    onChange={(e) =>
+                      setApiTest({ ...apiTest, request: e.target.value })
+                    }
+                    className="w-full h-40 border border-gray-300 rounded-lg px-3 py-2 font-mono text-sm"
+                    placeholder={JSON.stringify(
+                      resource.apiDocumentation?.exampleRequest || {},
+                      null,
+                      2
+                    )}
+                  />
+                  <button
+                    onClick={testAPI}
+                    disabled={apiTest.loading}
+                    className="mt-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {apiTest.loading
+                      ? "Testing..."
+                      : "Test API (will show 402)"}
+                  </button>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Response
+                  </label>
+                  <pre className="w-full h-40 border border-gray-300 rounded-lg px-3 py-2 bg-gray-50 text-sm overflow-auto">
+                    {apiTest.response || "Response will appear here..."}
+                  </pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "documentation" && (
+          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200">
+            <h3 className="text-xl font-semibold text-gray-900 mb-6">
+              API Documentation
+            </h3>
+
+            {resource.documentation ? (
+              <div className="prose prose-sm max-w-none">
+                <ReactMarkdown
+                  components={{
+                    h2: ({ children }) => (
+                      <h2 className="text-lg font-semibold mt-6 mb-3 border-b border-gray-200 pb-2">
+                        {children}
+                      </h2>
+                    ),
+                    h3: ({ children }) => (
+                      <h3 className="text-base font-semibold mt-4 mb-2">
+                        {children}
+                      </h3>
+                    ),
+
+                    // Fix the code block rendering
+                    code: ({ node, inline, className, children, ...props }) => {
+                      if (inline) {
+                        return (
+                          <code
+                            className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono text-gray-800"
+                            {...props}
+                          >
+                            {children}
+                          </code>
+                        );
+                      }
+                      return (
+                        <code
+                          className="block bg-gray-900 text-green-400 p-4 rounded-lg overflow-x-auto my-4 font-mono text-sm whitespace-pre"
+                          {...props}
+                        >
+                          {children}
+                        </code>
+                      );
+                    },
+
+                    // Remove the pre wrapper since we're handling it in code
+                    pre: ({ children }) => <>{children}</>,
+
+                    ul: ({ children }) => (
+                      <ul className="list-disc ml-6 my-2">{children}</ul>
+                    ),
+                    li: ({ children }) => <li className="mb-1">{children}</li>,
+                    p: ({ children }) => (
+                      <p className="mb-3 leading-relaxed text-gray-700">
+                        {children}
+                      </p>
+                    ),
+                  }}
+                >
+                  {resource.documentation}
+                </ReactMarkdown>
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <Code className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                <p>No documentation provided for this resource.</p>
+                <p className="text-sm">
+                  The creator should add usage instructions to help you
+                  integrate.
+                </p>
+              </div>
+            )}
           </div>
         )}
 
