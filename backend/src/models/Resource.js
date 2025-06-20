@@ -71,7 +71,18 @@ const ResourceSchema = new mongoose.Schema(
       defaultTemperature: { type: Number, default: 0.7 },
       defaultMaxTokens: { type: Number, default: 1000 },
     },
+    // Auth for MCP servers
     mcpAuth: {
+      type: {
+        type: String,
+        enum: ["none", "bearer", "api_key"],
+        default: "none",
+      },
+      token: String,
+      header: String,
+    },
+    // Auth for API and AI model resources
+    auth: {
       type: {
         type: String,
         enum: ["none", "bearer", "api_key"],
@@ -114,7 +125,9 @@ const ResourceSchema = new mongoose.Schema(
 // Generate proxy URL before saving - FIXED VERSION
 ResourceSchema.pre("save", function (next) {
   if (!this.proxyUrl) {
-    const baseProxyUrl = process.env.PROXY_BASE_URL || "https://ai402proxy.xyz";
+    const baseProxyUrl = (
+      process.env.PROXY_BASE_URL || "https://ai402proxy.xyz"
+    ).trim();
 
     // Extract path from original URL
     let originalPath = "";
@@ -134,11 +147,12 @@ ResourceSchema.pre("save", function (next) {
       originalPath = originalPath.substring(1);
     }
 
-    // Generate proxy URL with preserved path
+    // Generate proxy URL with preserved path - ensure no newlines
     if (originalPath) {
-      this.proxyUrl = `${baseProxyUrl}/proxy/${this.id}/${originalPath}`;
+      this.proxyUrl =
+        `${baseProxyUrl}/proxy/${this.id}/${originalPath}`.replace(/\s/g, "");
     } else {
-      this.proxyUrl = `${baseProxyUrl}/proxy/${this.id}`;
+      this.proxyUrl = `${baseProxyUrl}/proxy/${this.id}`.replace(/\s/g, "");
     }
   }
   next();

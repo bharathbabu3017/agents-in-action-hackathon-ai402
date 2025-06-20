@@ -13,19 +13,35 @@ export async function forwardToOriginalAPI(resource, req) {
       headers["Authorization"] = req.headers["authorization"];
     }
 
-    // Add server-stored authentication if configured (for server's own auth)
-    if (resource.mcpAuth?.type === "bearer" && resource.mcpAuth.token) {
-      headers["Authorization"] = `Bearer ${resource.mcpAuth.token}`;
-    } else if (resource.mcpAuth?.type === "api_key" && resource.mcpAuth.token) {
-      const headerName = resource.mcpAuth.header || "X-API-Key";
-      headers[headerName] = resource.mcpAuth.token;
+    // Add server-stored authentication based on resource type
+    let authConfig = null;
+
+    if (resource.type === "mcp_server") {
+      authConfig = resource.mcpAuth;
+    } else if (resource.type === "api" || resource.type === "ai_model") {
+      authConfig = resource.auth;
     }
+
+    // Apply server-stored authentication if configured
+    if (authConfig?.type === "bearer" && authConfig.token) {
+      headers["Authorization"] = `Bearer ${authConfig.token}`;
+    } else if (authConfig?.type === "api_key" && authConfig.token) {
+      const headerName = authConfig.header || "X-API-Key";
+      headers[headerName] = authConfig.token;
+    }
+
+    console.log(
+      `🔗 Forwarding ${req.method} request to: ${resource.originalUrl}`
+    );
+    console.log(`🔐 Auth type: ${authConfig?.type || "none"}`);
 
     const response = await fetch(resource.originalUrl, {
       method: req.method,
       headers,
       body: req.method !== "GET" ? JSON.stringify(req.body) : undefined,
     });
+
+    console.log(`📡 Response status: ${response.status}`);
 
     const text = await response.text();
 
