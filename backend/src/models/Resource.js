@@ -125,9 +125,7 @@ const ResourceSchema = new mongoose.Schema(
 // Generate proxy URL before saving - FIXED VERSION
 ResourceSchema.pre("save", function (next) {
   if (!this.proxyUrl) {
-    const baseProxyUrl = (
-      process.env.PROXY_BASE_URL || "https://ai402proxy.xyz"
-    ).trim();
+    const baseProxyUrl = process.env.PROXY_BASE_URL.trim();
 
     // Extract path from original URL
     let originalPath = "";
