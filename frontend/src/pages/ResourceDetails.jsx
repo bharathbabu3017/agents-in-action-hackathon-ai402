@@ -43,8 +43,7 @@ const ResourceDetails = () => {
   const [loadingTools, setLoadingTools] = useState(false);
   const [toolsError, setToolsError] = useState("");
 
-  const API_BASE_URL =
-    process.env.REACT_APP_API_BASE_URL || "http://localhost:3001";
+  const API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
   useEffect(() => {
     loadResource();
@@ -1144,13 +1143,13 @@ try {
                         From
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        To Address
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Tool/Action
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Amount
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Block
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Transaction
@@ -1187,6 +1186,34 @@ try {
                             </div>
                           </div>
                         </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <div className="flex-shrink-0 h-8 w-8">
+                              <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center">
+                                <Wallet className="h-4 w-4 text-green-600" />
+                              </div>
+                            </div>
+                            <div className="ml-3">
+                              <code className="text-xs bg-gray-100 px-2 py-1 rounded">
+                                {tx.toAddress.slice(0, 6)}...
+                                {tx.toAddress.slice(-4)}
+                              </code>
+                              <div className="text-xs text-gray-500">
+                                Recipient
+                              </div>
+                              <button
+                                onClick={() =>
+                                  copyToClipboard(tx.toAddress, `to-${tx._id}`)
+                                }
+                                className="text-xs text-gray-400 hover:text-gray-600 mt-1"
+                              >
+                                {copiedText === `to-${tx._id}`
+                                  ? "Copied!"
+                                  : "Copy address"}
+                              </button>
+                            </div>
+                          </div>
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           <div className="font-medium">
                             {tx.toolUsed || "API Call"}
@@ -1201,32 +1228,11 @@ try {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm font-bold text-green-600">
-                            {tx.amount} {tx.currency}
+                            {tx.amount} {tx.currency || "USDC"}
                           </div>
                           <div className="text-xs text-gray-500">
                             ${(tx.amount * 1).toFixed(3)} USD
                           </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {tx.blockNumber ? (
-                            <div>
-                              <a
-                                href={`https://base-sepolia.blockscout.com/block/${tx.blockNumber}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-blue-600 hover:text-blue-700 font-mono"
-                              >
-                                #{tx.blockNumber}
-                              </a>
-                              {tx.gasUsed && (
-                                <div className="text-xs text-gray-400">
-                                  Gas: {tx.gasUsed}
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-gray-400">-</span>
-                          )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           {tx.txHash ? (
@@ -1253,6 +1259,11 @@ try {
                                   ? "Copied!"
                                   : "Copy hash"}
                               </button>
+                              {tx.blockNumber && (
+                                <div className="text-xs text-gray-400 mt-1">
+                                  Block: #{tx.blockNumber}
+                                </div>
+                              )}
                             </div>
                           ) : (
                             <span className="text-gray-400">No hash</span>
