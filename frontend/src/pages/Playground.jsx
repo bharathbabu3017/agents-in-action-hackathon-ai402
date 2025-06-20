@@ -62,8 +62,7 @@ const Playground = () => {
   const [processingPayment, setProcessingPayment] = useState(false);
 
   const messagesEndRef = useRef(null);
-  const API_BASE_URL =
-    process.env.REACT_APP_API_BASE_URL || "http://localhost:3001";
+  const API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
   // USDC token address on Base Sepolia
   const USDC_ADDRESS = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
