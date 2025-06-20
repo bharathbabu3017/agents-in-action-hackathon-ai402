@@ -170,23 +170,9 @@ ALL    /proxy/:resourceId/*     # Access monetized resource (payment required)
 - Authentication token management
 - CORS and input validation
 
-## Contributing
-
-1. Fork the repository
-2. Create feature branch: `git checkout -b feature/name`
-3. Commit changes: `git commit -m 'Add feature'`
-4. Push branch: `git push origin feature/name`
-5. Open Pull Request
-
-## License
-
-MIT License - see LICENSE file for details.
-
 ## Support
 
-- **Documentation**: `/docs` directory
-- **Issues**: GitHub Issues
-- **Community**: x402 Protocol Discord
+- Reach out on Twitter @bharathbabu3017
 
 ---
 
