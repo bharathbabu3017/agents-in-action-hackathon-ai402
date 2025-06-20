@@ -154,10 +154,11 @@ async function verifyPayment(req, res, paymentRequirements) {
 
     // Store settlement details for later use in transaction saving
     req.settlementDetails = {
-      txHash: settleResponse.transaction?.hash,
-      blockNumber: settleResponse.transaction?.blockNumber,
-      gasUsed: settleResponse.transaction?.gasUsed,
+      txHash: settleResponse.transaction,
+      blockNumber: settleResponse.blockNumber,
+      gasUsed: settleResponse.gasUsed,
       fromAddress: settleResponse.payer || response.payer,
+      network: settleResponse.network,
     };
 
     return true;
@@ -468,6 +469,93 @@ app.all("/proxy/:resourceId/*", async (req, res) => {
       return;
     }
 
+    // Handle API resources (non-MCP, non-AI model)
+    if (resource.type === "api") {
+      console.log("🌐 API resource request - checking payment...");
+
+      // For API resources, apply payment logic for all requests except GET
+      const price = resource.pricing.defaultAmount;
+      const baseUrl = `${req.protocol}://${req.get("host")}`;
+      const resourceUrl = `${baseUrl}/proxy/${resourceId}/${path}`;
+
+      const paymentRequirements = [
+        createExactPaymentRequirements(
+          `$${price}`,
+          "base-sepolia",
+          resourceUrl,
+          resource.creatorAddress,
+          `Payment for ${resource.name}`
+        ),
+      ];
+
+      const isValid = await verifyPayment(req, res, paymentRequirements);
+      if (!isValid) return;
+
+      console.log("✅ Payment verified, calling API...");
+
+      try {
+        const { forwardToOriginalAPI } = await import(
+          "./services/proxyService.js"
+        );
+        const result = await forwardToOriginalAPI(resource, req);
+
+        // Return the API result
+        res.json(result);
+
+        // Add the missing Transaction import here
+        const Transaction = (await import("./models/Transaction.js")).default;
+
+        // Log successful transaction
+        const transaction = new Transaction({
+          resourceId: resource.id,
+          resourceName: resource.name,
+          fromAddress: req.settlementDetails?.fromAddress || "unknown",
+          toAddress: resource.creatorAddress,
+          amount: price,
+          currency: "USDC",
+          txHash: req.settlementDetails?.txHash,
+          blockNumber: req.settlementDetails?.blockNumber,
+          gasUsed: req.settlementDetails?.gasUsed,
+          toolUsed: "api_call",
+          status: "completed",
+          requestData: {
+            method: req.method,
+            path: path,
+            body: req.body,
+          },
+        });
+
+        await transaction.save();
+        console.log("💾 Saved transaction with details:", {
+          txHash: req.settlementDetails?.txHash,
+          blockNumber: req.settlementDetails?.blockNumber,
+          fromAddress: req.settlementDetails?.fromAddress,
+        });
+
+        // Update resource stats
+        await Resource.findOneAndUpdate(
+          { id: resource.id },
+          {
+            $inc: {
+              "stats.totalUses": 1,
+              "stats.totalEarnings": price,
+            },
+            $set: {
+              "stats.lastUsed": new Date(),
+            },
+          }
+        );
+
+        return;
+      } catch (error) {
+        console.error("Error calling API:", error);
+        return res.status(500).json({
+          error: "API call failed",
+          message: error.message,
+        });
+      }
+    }
+
     // For other resource types, apply similar payment logic
     const price = resource.pricing.defaultAmount;
     const baseUrl = `${req.protocol}://${req.get("host")}`;
@@ -488,7 +576,9 @@ app.all("/proxy/:resourceId/*", async (req, res) => {
 
     // Process other resource types...
     console.log("✅ Payment verified for other resource type");
-    // Add your logic here for other resource types
+    res.json({
+      message: "Payment verified, resource type not fully implemented",
+    });
   } catch (error) {
     console.error("Proxy error:", error);
     res.status(500).json({

@@ -533,13 +533,13 @@ try {
               <div className="bg-white rounded-xl p-6 border border-gray-200">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-500">Unique Users</p>
+                    <p className="text-sm text-gray-500">Total Transactions</p>
                     <p className="text-2xl font-bold text-purple-600">
-                      {resource.stats?.uniqueUsers || 0}
+                      {transactions.length}
                     </p>
                   </div>
                   <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
-                    <Users className="w-6 h-6 text-purple-600" />
+                    <Activity className="w-6 h-6 text-purple-600" />
                   </div>
                 </div>
               </div>
