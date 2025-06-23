@@ -6,7 +6,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const PROXY_URL =
-  "http://localhost:3001/proxy/54021845-c954-460d-a392-99feedbd0b28/mcp";
+  "http://localhost:3001/proxy/5a78153a-8116-46bf-9d16-da34a0755feb/mcp";
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
 
 async function testWithSessionManagement() {
