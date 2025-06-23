@@ -6,7 +6,7 @@ import { withPaymentInterceptor } from "x402-axios";
 config();
 
 const url =
-  "https://www.ai402proxy.xyz/proxy/1d33f485-b478-42a7-b53a-682cba5a1574/rickroll";
+  "http://localhost:3001/proxy/c0c465f9-7e12-42e8-81cf-b0c1667ffe16/rickroll";
 const privateKey = process.env.PRIVATE_KEY;
 
 async function testPayment() {

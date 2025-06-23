@@ -6,7 +6,7 @@ import { withPaymentInterceptor } from "x402-axios";
 config();
 
 const url =
-  "https://www.ai402proxy.xyz/proxy/fcf9f206-8e27-4d9b-a7b2-f73b6090752c/chat";
+  "http://localhost:3001/proxy/fcf9f206-8e27-4d9b-a7b2-f73b6090752c/chat";
 const privateKey = process.env.PRIVATE_KEY;
 
 // Chat request payload for the AI model (Bedrock format)
@@ -98,11 +98,6 @@ async function testNovaProAI() {
       console.log(
         `   Total tokens: ${response.data.usage.totalTokens || "N/A"}`
       );
-    }
-
-    if (response.data.pricing) {
-      console.log("💰 Pricing:");
-      console.log(`   Cost: $${response.data.pricing.totalCost || "N/A"}`);
     }
 
     // Show payment confirmation if available
