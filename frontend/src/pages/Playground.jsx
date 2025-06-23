@@ -125,33 +125,27 @@ const Playground = () => {
   };
 
   const loadMCPTools = async (mcpServer) => {
-    if (!mcpServer || !mcpServer.proxyUrl) return;
+    if (!mcpServer || !mcpServer.id) return;
 
     setLoadingTools(true);
     setMcpTools([]);
 
     try {
-      const response = await fetch(`${mcpServer.proxyUrl}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json, text/event-stream",
-        },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "tools/list",
-          params: {},
-        }),
-      });
+      // Use the new internal tools endpoint instead of proxy URL
+      const response = await fetch(
+        `${API_BASE_URL}/api/resources/${mcpServer.id}/tools`
+      );
 
       if (response.ok) {
         const data = await response.json();
-        // JSON-RPC response format: { jsonrpc, id, result: { tools: [...] } }
-        const tools = data.result?.tools || [];
+        const tools = data.tools || [];
         setMcpTools(tools);
+        console.log(
+          `Loaded ${tools.length} tools from MCP server using ${data.transport} transport`
+        );
       } else {
-        console.error("Failed to fetch tools:", response.statusText);
+        const errorData = await response.json();
+        console.error("Failed to fetch tools:", errorData);
         setMcpTools([]);
       }
     } catch (error) {

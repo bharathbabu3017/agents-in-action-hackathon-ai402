@@ -101,6 +101,7 @@ router.post("/chat", async (req, res) => {
         parameters,
         reasoning,
         pricing,
+        originalBedrockResponse,
       } = confirmedToolCall;
 
       // Verify payment for tool call
@@ -183,11 +184,14 @@ router.post("/chat", async (req, res) => {
           parameters
         );
 
+        // Get MCP tools again for toolConfig
+        const mcpTools = await getMCPTools(mcpResource);
+
         // Generate final response with tool data
         const finalResponse = await generateFinalResponse(
           llmModelId,
           messages,
-          confirmedToolCall.llmResponse || "Tool execution requested",
+          originalBedrockResponse,
           toolName,
           toolResult
         );
@@ -373,6 +377,7 @@ router.post("/chat", async (req, res) => {
           analysis.reasoning ||
           `Need to use ${toolName} tool to answer your question`,
         llmResponse: analysis.response,
+        originalBedrockResponse: analysis.originalBedrockResponse,
         pricing: {
           amount: pricing,
           description: `${mcpResource.name} - ${toolName} tool`,

@@ -2,7 +2,9 @@ import {
   BedrockRuntimeClient,
   ConverseCommand,
 } from "@aws-sdk/client-bedrock-runtime";
-import { forwardToOriginalAPI } from "./proxyService.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 
 // Create Bedrock client
 function createBedrockClient() {
@@ -24,18 +26,34 @@ function createBedrockClient() {
 }
 
 /**
- * Get available tools from MCP server (fixed to make direct HTTP call)
+ * Connect to MCP server using Client SDK with auth + session management
  */
-export async function getMCPTools(mcpResource) {
-  try {
-    console.log(`🔍 Getting tools from MCP server: ${mcpResource.name}`);
+async function connectToMCPServer(mcpResource) {
+  console.log(`🔗 Connecting to MCP server: ${mcpResource.name}`);
 
-    const headers = {
-      "Content-Type": "application/json",
-      Accept: "application/json, text/event-stream",
-    };
+  const baseUrl = new URL(mcpResource.originalUrl);
 
-    // Add authentication if configured
+  const client = new Client(
+    {
+      name: "ai402-playground-client",
+      version: "1.0.0",
+    },
+    {
+      capabilities: {
+        roots: {},
+        sampling: {},
+        tools: {},
+      },
+    }
+  );
+
+  // ✅ Build auth headers for MCP Client SDK
+  const headers = {
+    Accept: "application/json, text/event-stream",
+  };
+
+  // Add authentication if configured
+  if (mcpResource.mcpAuth && mcpResource.mcpAuth.type !== "none") {
     if (mcpResource.mcpAuth.type === "bearer" && mcpResource.mcpAuth.token) {
       headers["Authorization"] = `Bearer ${mcpResource.mcpAuth.token}`;
     } else if (
@@ -45,54 +63,117 @@ export async function getMCPTools(mcpResource) {
       const headerName = mcpResource.mcpAuth.header || "X-API-Key";
       headers[headerName] = mcpResource.mcpAuth.token;
     }
+  }
 
-    const response = await fetch(mcpResource.originalUrl, {
-      method: "POST",
-      headers: headers,
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "tools/list",
-        params: {},
-      }),
+  let transport;
+  let transportUsed = "unknown";
+
+  try {
+    transport = new StreamableHTTPClientTransport(baseUrl, {
+      requestInit: {
+        headers, // ✅ FIXED: Headers inside requestInit!
+      },
     });
-
-    const text = await response.text();
-    console.log(`📥 MCP Response: ${text.substring(0, 200)}...`);
-
-    // Handle SSE response
-    if (text.includes("data: ")) {
-      const dataLine = text
-        .split("\n")
-        .find((line) => line.startsWith("data: "));
-      if (dataLine) {
-        const jsonData = JSON.parse(dataLine.substring(6));
-        const tools = jsonData.result?.tools || [];
-        console.log(
-          `🛠️ Found ${tools.length} tools: ${tools
-            .map((t) => t.name)
-            .join(", ")}`
-        );
-        return tools;
-      }
-    }
-
-    // Handle regular JSON response
+    await client.connect(transport);
+    transportUsed = "StreamableHTTP";
+    console.log(`✅ Connected to ${mcpResource.name} using Streamable HTTP`);
+  } catch (error) {
+    console.log(
+      `⚠️ Streamable HTTP failed for ${mcpResource.name}, trying SSE...`
+    );
     try {
-      const jsonData = JSON.parse(text);
-      const tools = jsonData.result?.tools || [];
-      console.log(
-        `🛠️ Found ${tools.length} tools: ${tools.map((t) => t.name).join(", ")}`
+      transport = new SSEClientTransport(baseUrl, {
+        requestInit: {
+          headers, // ✅ FIXED: Headers inside requestInit!
+        },
+      });
+      await client.connect(transport);
+      transportUsed = "SSE";
+      console.log(`✅ Connected to ${mcpResource.name} using SSE`);
+    } catch (sseError) {
+      throw new Error(
+        `Failed to connect with both transports. StreamableHTTP: ${error.message}, SSE: ${sseError.message}`
       );
-      return tools;
-    } catch {
-      console.log("❌ Could not parse MCP response as JSON");
-      return [];
     }
+  }
+
+  return { client, transportUsed };
+}
+
+/**
+ * Get available tools from MCP server using Client SDK
+ */
+export async function getMCPTools(mcpResource) {
+  let client;
+  try {
+    console.log(`🔍 Getting tools from MCP server: ${mcpResource.name}`);
+
+    const { client: mcpClient, transportUsed } = await connectToMCPServer(
+      mcpResource
+    );
+    client = mcpClient;
+
+    // Use MCP Client SDK to list tools
+    const toolsResponse = await client.listTools();
+    const tools = toolsResponse.tools || [];
+
+    console.log(
+      `🛠️ Found ${tools.length} tools using ${transportUsed}: ${tools
+        .map((t) => t.name)
+        .join(", ")}`
+    );
+
+    return tools;
   } catch (error) {
     console.error("Failed to get MCP tools:", error.message);
     return [];
+  } finally {
+    if (client) {
+      try {
+        await client.close();
+        console.log("🔌 MCP client connection closed");
+      } catch (closeError) {
+        console.warn("Error closing MCP client:", closeError.message);
+      }
+    }
   }
+}
+
+/**
+ * Convert MCP tools to Bedrock tool schema format
+ */
+function toolsToBedrockSchema(mcpTools) {
+  if (!mcpTools || mcpTools.length === 0) {
+    return { tools: [] };
+  }
+
+  const tools = mcpTools.map((tool) => {
+    let props = {};
+    if (tool.inputSchema?.properties) {
+      Object.keys(tool.inputSchema.properties).forEach((prop) => {
+        props[prop] = {
+          type: tool.inputSchema.properties[prop].type,
+          description: tool.inputSchema.properties[prop]?.description || prop,
+        };
+      });
+    }
+
+    return {
+      toolSpec: {
+        name: tool.name,
+        description: tool?.description || tool.name,
+        inputSchema: {
+          json: {
+            type: tool.inputSchema?.type || "object",
+            properties: props,
+            required: tool.inputSchema?.required || [],
+          },
+        },
+      },
+    };
+  });
+
+  return { tools };
 }
 
 /**
@@ -253,74 +334,53 @@ export async function analyzeChatMessage(
 }
 
 /**
- * Execute tool call via direct HTTP (similar to getMCPTools)
+ * Execute tool call using MCP Client SDK (DEBUG VERSION)
  */
 export async function executeToolCall(mcpResource, toolName, parameters) {
+  let client;
   try {
     console.log(`🔧 Executing tool: ${toolName} with parameters:`, parameters);
 
-    const headers = {
-      "Content-Type": "application/json",
-      Accept: "application/json, text/event-stream",
-    };
+    const { client: mcpClient, transportUsed } = await connectToMCPServer(
+      mcpResource
+    );
+    client = mcpClient;
 
-    // Add authentication if configured
-    if (mcpResource.mcpAuth.type === "bearer" && mcpResource.mcpAuth.token) {
-      headers["Authorization"] = `Bearer ${mcpResource.mcpAuth.token}`;
-    } else if (
-      mcpResource.mcpAuth.type === "api_key" &&
-      mcpResource.mcpAuth.token
-    ) {
-      const headerName = mcpResource.mcpAuth.header || "X-API-Key";
-      headers[headerName] = mcpResource.mcpAuth.token;
-    }
-
-    const response = await fetch(mcpResource.originalUrl, {
-      method: "POST",
-      headers: headers,
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "tools/call",
-        params: {
-          name: toolName,
-          arguments: parameters,
-        },
-      }),
+    // Use MCP Client SDK to call tool
+    const toolResult = await client.callTool({
+      name: toolName,
+      arguments: parameters,
     });
 
-    const text = await response.text();
-    console.log(`📥 Tool response: ${text.substring(0, 200)}...`);
+    console.log(`✅ Tool execution successful using ${transportUsed}`);
+    console.log(`🔍 DEBUG - Tool result type:`, typeof toolResult);
+    console.log(
+      `🔍 DEBUG - Tool result keys:`,
+      toolResult ? Object.keys(toolResult) : "null"
+    );
+    console.log(
+      `🔍 DEBUG - Full tool result:`,
+      JSON.stringify(toolResult, null, 2)
+    );
 
-    // Handle SSE response
-    if (text.includes("data: ")) {
-      const dataLine = text
-        .split("\n")
-        .find((line) => line.startsWith("data: "));
-      if (dataLine) {
-        const jsonData = JSON.parse(dataLine.substring(6));
-        console.log("✅ Tool execution successful");
-        return jsonData.result;
-      }
-    }
-
-    // Handle regular JSON response
-    try {
-      const jsonData = JSON.parse(text);
-      console.log("✅ Tool execution successful");
-      return jsonData.result;
-    } catch {
-      console.log("❌ Could not parse tool response as JSON");
-      return { error: "Invalid response from tool" };
-    }
+    return toolResult;
   } catch (error) {
     console.error("Tool execution failed:", error);
     throw new Error(`Tool execution failed: ${error.message}`);
+  } finally {
+    if (client) {
+      try {
+        await client.close();
+        console.log("🔌 MCP client connection closed");
+      } catch (closeError) {
+        console.warn("Error closing MCP client:", closeError.message);
+      }
+    }
   }
 }
 
 /**
- * Generate final response with tool results
+ * Generate final response with tool results (DEBUG VERSION)
  */
 export async function generateFinalResponse(
   modelId,
@@ -334,23 +394,126 @@ export async function generateFinalResponse(
 
     console.log("💬 Generating final response with tool data...");
 
+    // ✅ DEBUG: Log all inputs
+    console.log("🔍 DEBUG - Input parameters:");
+    console.log("  modelId:", modelId);
+    console.log(
+      "  originalMessages:",
+      JSON.stringify(originalMessages, null, 2)
+    );
+    console.log("  llmResponse:", llmResponse);
+    console.log("  toolName:", toolName);
+    console.log("  toolResult type:", typeof toolResult);
+    console.log("  toolResult:", JSON.stringify(toolResult, null, 2));
+
+    // ✅ FIXED: Safely extract user message
+    let userMessage;
+    try {
+      if (originalMessages && originalMessages.length > 0) {
+        const lastMessage = originalMessages[originalMessages.length - 1];
+        console.log(
+          "🔍 DEBUG - Last message structure:",
+          JSON.stringify(lastMessage, null, 2)
+        );
+
+        if (
+          lastMessage &&
+          lastMessage.content &&
+          Array.isArray(lastMessage.content)
+        ) {
+          if (lastMessage.content[0] && lastMessage.content[0].text) {
+            userMessage = lastMessage.content[0].text;
+          } else {
+            console.warn("⚠️ Last message content[0] missing text property");
+            userMessage = "Previous user question";
+          }
+        } else {
+          console.warn("⚠️ Last message missing content array");
+          userMessage = "Previous user question";
+        }
+      } else {
+        console.warn("⚠️ No original messages provided");
+        userMessage = "Previous user question";
+      }
+    } catch (msgError) {
+      console.error("❌ Error extracting user message:", msgError);
+      userMessage = "Previous user question";
+    }
+
+    console.log("🔍 DEBUG - Extracted user message:", userMessage);
+
+    // ✅ FIXED: Format tool result safely
+    let toolResultText;
+    try {
+      if (typeof toolResult === "string") {
+        toolResultText = toolResult;
+      } else if (toolResult && typeof toolResult === "object") {
+        // Handle MCP Client SDK response format
+        if (toolResult.content && Array.isArray(toolResult.content)) {
+          // Extract text from MCP response content
+          toolResultText = toolResult.content
+            .filter((item) => item && item.type === "text")
+            .map((item) => item.text)
+            .join("\n");
+        } else {
+          toolResultText = JSON.stringify(toolResult, null, 2);
+        }
+      } else {
+        toolResultText = String(toolResult || "No result");
+      }
+    } catch (stringifyError) {
+      console.warn("Could not stringify tool result:", stringifyError);
+      toolResultText =
+        "Tool executed successfully but result could not be displayed.";
+    }
+
+    console.log("🔍 DEBUG - Formatted tool result:", toolResultText);
+
+    // ✅ FIXED: Handle undefined llmResponse safely
+    const safeAssistantContent =
+      llmResponse || `I used the ${toolName} tool to help you.`;
+
     const finalMessages = [
-      ...originalMessages,
+      {
+        role: "user",
+        content: [{ text: userMessage }],
+      },
       {
         role: "assistant",
-        content: [{ text: llmResponse }],
+        content: [{ text: safeAssistantContent }], // ✅ Safe content
       },
       {
         role: "user",
         content: [
           {
-            text: `Here's the result from the ${toolName} tool: ${JSON.stringify(
-              toolResult
-            )}. Please provide a comprehensive answer based on this data. Don't mention the JSON format, just give a natural response.`,
+            text: `Here's the result from the ${toolName} tool: ${toolResultText}. Please provide a comprehensive answer based on this data. Don't mention the JSON format, just give a natural response.`,
           },
         ],
       },
     ];
+
+    console.log("🔍 DEBUG - Final messages structure:");
+    console.log(JSON.stringify(finalMessages, null, 2));
+
+    // ✅ Validate message structure before sending
+    for (let i = 0; i < finalMessages.length; i++) {
+      const msg = finalMessages[i];
+      if (!msg.role || !msg.content || !Array.isArray(msg.content)) {
+        throw new Error(
+          `Invalid message structure at index ${i}: missing role or content array`
+        );
+      }
+      for (let j = 0; j < msg.content.length; j++) {
+        const content = msg.content[j];
+        if (!content || typeof content.text !== "string") {
+          throw new Error(
+            `Invalid content structure at message ${i}, content ${j}: missing text property`
+          );
+        }
+      }
+    }
+
+    console.log("✅ Message structure validation passed");
 
     const response = await client.send(
       new ConverseCommand({
@@ -363,8 +526,14 @@ export async function generateFinalResponse(
       })
     );
 
+    console.log(
+      "🔍 DEBUG - Bedrock response structure:",
+      JSON.stringify(response.output, null, 2)
+    );
+
+    // ✅ FIXED: Safe content extraction
     const finalText = response.output.message.content
-      .filter((content) => content.text)
+      .filter((content) => content && content.text)
       .map((content) => content.text)
       .join("\n");
 
@@ -373,7 +542,8 @@ export async function generateFinalResponse(
       tokensUsed: response.usage.totalTokens,
     };
   } catch (error) {
-    console.error("Error generating final response:", error);
+    console.error("❌ Error generating final response:", error);
+    console.error("❌ Error stack:", error.stack);
     throw new Error(`Final response generation failed: ${error.message}`);
   }
 }
