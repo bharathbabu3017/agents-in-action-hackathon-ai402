@@ -66,37 +66,29 @@ const ResourceDetails = () => {
 
   // Add this new function to fetch MCP tools
   const loadMCPTools = async () => {
-    if (!resource || resource.type !== "mcp_server" || !resource.proxyUrl)
-      return;
+    if (!resource || resource.type !== "mcp_server") return;
 
     setLoadingTools(true);
     setToolsError("");
     setMcpTools([]);
 
     try {
-      const response = await fetch(`${resource.proxyUrl}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json, text/event-stream",
-        },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "tools/list",
-          params: {},
-        }),
-      });
+      // Use the new internal endpoint instead of proxy URL
+      const response = await fetch(
+        `${API_BASE_URL}/api/resources/${resource.id}/tools`
+      );
 
       if (response.ok) {
         const data = await response.json();
-        // JSON-RPC response format: { jsonrpc, id, result: { tools: [...] } }
-        const tools = data.result?.tools || [];
+        const tools = data.tools || [];
         setMcpTools(tools);
-        console.log(`Loaded ${tools.length} tools from MCP server`);
+        console.log(
+          `Loaded ${tools.length} tools from MCP server using ${data.transport} transport`
+        );
       } else {
-        console.error("Failed to fetch tools:", response.statusText);
-        setToolsError(`Failed to fetch tools: ${response.statusText}`);
+        const errorData = await response.json();
+        console.error("Failed to fetch tools:", errorData);
+        setToolsError(`Failed to fetch tools: ${errorData.message}`);
         setMcpTools([]);
       }
     } catch (error) {

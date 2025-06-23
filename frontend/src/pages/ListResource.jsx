@@ -80,6 +80,21 @@ const ListResource = () => {
     });
   };
 
+  const handleAuthTypeChange = (authType) => {
+    handleInputChange("auth.type", authType);
+
+    if (authType === "none") {
+      handleInputChange("auth.token", "");
+      handleInputChange("auth.header", "");
+    } else if (authType === "bearer") {
+      handleInputChange("auth.header", ""); // Clear header for bearer
+    } else if (authType === "api_key") {
+      if (!formData.auth.header) {
+        handleInputChange("auth.header", "X-API-Key");
+      }
+    }
+  };
+
   const getExamplePlaceholder = (type) => {
     if (type === "api") {
       return '{"method": "POST", "url": "https://api.example.com/endpoint", "body": {"key": "value"}}';
@@ -700,9 +715,7 @@ To use with CDP AgentKit, tell the agent:
                 </label>
                 <select
                   value={formData.auth.type}
-                  onChange={(e) =>
-                    handleInputChange("auth.type", e.target.value)
-                  }
+                  onChange={(e) => handleAuthTypeChange(e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="none">None (Public)</option>

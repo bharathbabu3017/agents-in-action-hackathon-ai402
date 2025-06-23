@@ -22,15 +22,15 @@ export const MODEL_CONFIGS = {
     name: "Nova Lite",
     description: "Fast multimodal model",
     price: 0.002, // $0.002 fixed price
-    maxTokens: 1000, // Up to 1000 tokens included - FIXED
-    tokenLimit: 1000, // FIXED to match seeded config
+    maxTokens: 500, // Up to 500 tokens included
+    tokenLimit: 500,
   },
   "apac.amazon.nova-pro-v1:0": {
     name: "Nova Pro",
     description: "Most capable model",
     price: 0.005, // $0.005 fixed price
-    maxTokens: 2000, // Up to 2000 tokens included - FIXED
-    tokenLimit: 2000, // FIXED to match seeded config
+    maxTokens: 1000, // Up to 1000 tokens included (premium)
+    tokenLimit: 1000,
   },
 };
 
@@ -91,6 +91,28 @@ export function getTokenLimit(modelId) {
 }
 
 /**
+ * Convert OpenAI format messages to Bedrock format
+ */
+function convertToBedrockFormat(messages) {
+  return messages.map((message) => {
+    // If content is already an array (Bedrock format), return as is
+    if (Array.isArray(message.content)) {
+      return message;
+    }
+
+    // Convert string content to Bedrock format
+    return {
+      role: message.role,
+      content: [
+        {
+          text: message.content,
+        },
+      ],
+    };
+  });
+}
+
+/**
  * Call LLM with token limits enforced
  */
 export async function callLLM(modelId, messages, options = {}) {
@@ -108,10 +130,14 @@ export async function callLLM(modelId, messages, options = {}) {
 
     const client = createBedrockClient();
 
+    // Convert messages to Bedrock format
+    const bedrockMessages = convertToBedrockFormat(messages);
+    console.log(`📝 Converted ${messages.length} messages to Bedrock format`);
+
     const response = await client.send(
       new ConverseCommand({
         modelId: modelId,
-        messages: messages,
+        messages: bedrockMessages,
         inferenceConfig: {
           temperature,
           maxTokens: effectiveMaxTokens, // Use our limit

@@ -1,41 +1,63 @@
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+
 export async function getMCPTools(mcpUrl) {
+  let client;
   try {
-    const response = await fetch(mcpUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json, text/event-stream",
+    console.log(`🔍 Fetching MCP tools from: ${mcpUrl}`);
+
+    const baseUrl = new URL(mcpUrl);
+
+    client = new Client(
+      {
+        name: "ai402-mcp-client",
+        version: "1.0.0",
       },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "tools/list",
-        params: {},
-      }),
-    });
+      {
+        capabilities: {
+          roots: {},
+          sampling: {},
+          tools: {},
+        },
+      }
+    );
 
-    const text = await response.text();
+    // Try transport fallback
+    let transport;
 
-    // Handle SSE response
-    if (text.includes("data: ")) {
-      const dataLine = text
-        .split("\n")
-        .find((line) => line.startsWith("data: "));
-      if (dataLine) {
-        const jsonData = JSON.parse(dataLine.substring(6));
-        return jsonData.result?.tools || [];
+    try {
+      transport = new StreamableHTTPClientTransport(baseUrl);
+      await client.connect(transport);
+      console.log("✅ Connected using Streamable HTTP transport");
+    } catch (error) {
+      console.log("⚠️ Streamable HTTP failed, trying SSE transport");
+      try {
+        transport = new SSEClientTransport(baseUrl);
+        await client.connect(transport);
+        console.log("✅ Connected using SSE transport");
+      } catch (sseError) {
+        throw new Error(
+          `Failed to connect with both transports: ${error.message}`
+        );
       }
     }
 
-    // Handle regular JSON response
-    try {
-      const jsonData = JSON.parse(text);
-      return jsonData.result?.tools || [];
-    } catch {
-      return [];
-    }
+    const toolsResponse = await client.listTools();
+    const tools = toolsResponse.tools || [];
+
+    console.log(`✅ Successfully fetched ${tools.length} tools`);
+    return tools;
   } catch (error) {
     console.error("Error fetching MCP tools:", error.message);
     return [];
+  } finally {
+    if (client) {
+      try {
+        await client.close();
+      } catch (closeError) {
+        console.warn("Error closing MCP client:", closeError.message);
+      }
+    }
   }
 }
