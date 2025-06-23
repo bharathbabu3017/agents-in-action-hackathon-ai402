@@ -497,32 +497,6 @@ const Marketplace = () => {
                       <div className="text-xs text-gray-500">earned</div>
                     </div>
                   </div>
-
-                  {/* MCP Tools Preview */}
-                  {resource.type === "mcp_server" &&
-                    resource.mcpTools &&
-                    resource.mcpTools.length > 0 && (
-                      <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-2">
-                          Available Tools ({resource.mcpTools.length})
-                        </label>
-                        <div className="flex flex-wrap gap-1">
-                          {resource.mcpTools.slice(0, 3).map((tool, index) => (
-                            <span
-                              key={index}
-                              className="px-2 py-1 text-xs bg-blue-50 text-blue-700 rounded-md font-medium"
-                            >
-                              {tool.name}
-                            </span>
-                          ))}
-                          {resource.mcpTools.length > 3 && (
-                            <span className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded-md">
-                              +{resource.mcpTools.length - 3} more
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    )}
                 </div>
 
                 {/* Card Footer */}
