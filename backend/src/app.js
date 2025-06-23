@@ -7,6 +7,7 @@ import { settleResponseHeader } from "x402/types";
 import { useFacilitator } from "x402/verify";
 import { processPriceToAtomicAmount } from "x402/shared";
 import Resource from "./models/Resource.js";
+import Transaction from "./models/Transaction.js";
 import resourceRoutes from "./routes/resources.js";
 import playgroundRoutes from "./routes/playground.js";
 import {
@@ -260,6 +261,13 @@ app.all("/proxy/:resourceId/*", async (req, res) => {
         const isValid = await verifyPayment(req, res, paymentRequirements);
         if (!isValid) return;
 
+        // ✅ Store payment details for transaction recording (regardless of settlement success)
+        req.paymentVerified = {
+          toolPrice: toolPrice,
+          toolName: toolName,
+          payer: req.settlementDetails?.fromAddress || "unknown",
+        };
+
         console.log("✅ Payment verified, executing MCP tool call...");
       } else {
         // 🆓 ALL other MCP methods are FREE (initialize, tools/list, capabilities, etc.)
@@ -274,6 +282,55 @@ app.all("/proxy/:resourceId/*", async (req, res) => {
           "./services/proxyService.js"
         );
         const result = await forwardToOriginalAPI(resource, req);
+
+        // ✅ RECORD TRANSACTION FOR PAID TOOL CALLS (using verification details)
+        if (mcpMethod === "tools/call" && req.paymentVerified) {
+          console.log("💾 Recording transaction...");
+
+          // Create transaction record
+          const transaction = new Transaction({
+            resourceId: resource.id,
+            resourceName: resource.name,
+            fromAddress: req.paymentVerified.payer,
+            toAddress: resource.creatorAddress,
+            amount: req.paymentVerified.toolPrice, // ✅ Use verified payment amount
+            toolUsed: req.paymentVerified.toolName,
+            txHash: req.settlementDetails?.txHash || null, // Optional - might be null if settlement failed
+            blockNumber: req.settlementDetails?.blockNumber || null,
+            gasUsed: req.settlementDetails?.gasUsed || null,
+            status: "completed",
+            requestData: {
+              method: mcpMethod,
+              toolName: req.paymentVerified.toolName,
+              parameters: req.body.params.arguments,
+            },
+          });
+
+          await transaction.save();
+
+          // Update resource stats
+          await Resource.findOneAndUpdate(
+            { id: resource.id },
+            {
+              $inc: {
+                "stats.totalUses": 1,
+                "stats.totalEarnings": req.paymentVerified.toolPrice,
+              },
+              $set: { "stats.lastUsed": new Date() },
+            }
+          );
+
+          console.log(
+            `💾 Transaction recorded: $${req.paymentVerified.toolPrice} for ${req.paymentVerified.toolName}`
+          );
+          if (req.settlementDetails?.txHash) {
+            console.log(`🔗 Blockchain TX: ${req.settlementDetails.txHash}`);
+          } else {
+            console.log(
+              "⚠️ Settlement failed, but transaction recorded anyway"
+            );
+          }
+        }
 
         // ✅ Set response headers if provided
         if (result.headers) {
@@ -322,18 +379,51 @@ app.all("/proxy/:resourceId/*", async (req, res) => {
         );
         const result = await forwardToOriginalAPI(resource, req);
 
-        // Return the API result
-        if (resource.type === "mcp_server") {
-          // For MCP servers, preserve exact response format and status
-          if (result.error) {
-            // If it's a JSON-RPC error, return with 200 status (per JSON-RPC spec)
-            return res.status(200).json(result);
-          } else {
-            return res.status(200).json(result);
-          }
-        } else {
-          return res.json(result);
+        // ✅ ADD TRANSACTION RECORDING FOR API CALLS
+        if (req.settlementDetails) {
+          console.log("💾 Recording API transaction...");
+
+          // Create transaction record
+          const transaction = new Transaction({
+            resourceId: resource.id,
+            resourceName: resource.name,
+            fromAddress: req.settlementDetails.fromAddress || "unknown",
+            toAddress: resource.creatorAddress,
+            amount: price, // ✅ Use the API price
+            toolUsed: "api_call",
+            txHash: req.settlementDetails.txHash,
+            blockNumber: req.settlementDetails.blockNumber,
+            gasUsed: req.settlementDetails.gasUsed,
+            status: "completed",
+            requestData: {
+              method: req.method,
+              path: path,
+              body: req.body,
+            },
+          });
+
+          await transaction.save();
+
+          // Update resource stats
+          await Resource.findOneAndUpdate(
+            { id: resource.id },
+            {
+              $inc: {
+                "stats.totalUses": 1,
+                "stats.totalEarnings": price,
+              },
+              $set: { "stats.lastUsed": new Date() },
+            }
+          );
+
+          console.log(
+            `💾 API transaction recorded: $${price} for ${resource.name}`
+          );
+          console.log(`🔗 Blockchain TX: ${req.settlementDetails.txHash}`);
         }
+
+        // Return the API result
+        return res.json(result);
       } catch (error) {
         console.error("Error calling API:", error);
         return res.status(500).json({
@@ -400,6 +490,53 @@ app.all("/proxy/:resourceId/*", async (req, res) => {
           `📊 Token usage: ${llmResponse.usage.totalTokens}/${tokenLimit} tokens used`
         );
 
+        // ✅ ADD TRANSACTION RECORDING FOR AI MODEL CALLS
+        if (req.settlementDetails) {
+          console.log("💾 Recording AI model transaction...");
+
+          // Create transaction record
+          const transaction = new Transaction({
+            resourceId: resource.id,
+            resourceName: resource.name,
+            fromAddress: req.settlementDetails.fromAddress || "unknown",
+            toAddress: resource.creatorAddress,
+            amount: fixedPrice, // ✅ Use the fixed model price
+            toolUsed: `ai_inference_${resource.llmConfig.modelId}`,
+            txHash: req.settlementDetails.txHash,
+            blockNumber: req.settlementDetails.blockNumber,
+            gasUsed: req.settlementDetails.gasUsed,
+            status: "completed",
+            requestData: {
+              method: req.method,
+              modelId: resource.llmConfig.modelId,
+              tokenUsage: llmResponse.usage,
+              messagesCount: messages.length,
+            },
+          });
+
+          await transaction.save();
+
+          // Update resource stats
+          await Resource.findOneAndUpdate(
+            { id: resource.id },
+            {
+              $inc: {
+                "stats.totalUses": 1,
+                "stats.totalEarnings": fixedPrice,
+              },
+              $set: { "stats.lastUsed": new Date() },
+            }
+          );
+
+          console.log(
+            `💾 AI model transaction recorded: $${fixedPrice} for ${resource.llmConfig.modelId}`
+          );
+          console.log(`🔗 Blockchain TX: ${req.settlementDetails.txHash}`);
+          console.log(
+            `📊 Tokens used: ${llmResponse.usage.totalTokens}/${tokenLimit}`
+          );
+        }
+
         // Return OpenAI-compatible response
         res.json({
           id: crypto.randomUUID(),
@@ -419,9 +556,6 @@ app.all("/proxy/:resourceId/*", async (req, res) => {
           usage: llmResponse.usage,
           pricing: llmResponse.pricing,
         });
-
-        // Log transaction
-        // ... transaction logging code ...
       } catch (error) {
         console.error("Error calling LLM:", error);
         return res.status(500).json({

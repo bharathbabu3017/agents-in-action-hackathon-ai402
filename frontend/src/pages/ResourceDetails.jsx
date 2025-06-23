@@ -450,7 +450,7 @@ console.log(response.data);`;
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-4">
               <button
-                onClick={() => window.history.back()}
+                onClick={() => (window.location.href = "/marketplace")}
                 className="flex items-center text-gray-600 hover:text-gray-800 transition-colors"
               >
                 <ArrowLeft className="w-5 h-5 mr-2" />
