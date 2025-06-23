@@ -1,6 +1,9 @@
 import express from "express";
 import Resource from "../models/Resource.js";
 import { getMCPTools } from "../services/mcpService.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 
 const router = express.Router();
 
@@ -179,6 +182,7 @@ router.get("/:id/stars", async (req, res) => {
  * @access  Public
  */
 router.post("/fetch-mcp-tools", async (req, res) => {
+  let client;
   try {
     const { url, auth } = req.body;
 
@@ -186,9 +190,14 @@ router.post("/fetch-mcp-tools", async (req, res) => {
       return res.status(400).json({ error: "URL is required" });
     }
 
-    // Prepare headers
+    console.log(`🔍 Fetching MCP tools from: ${url}`);
+    console.log(`🔐 Auth config:`, auth);
+
+    // Convert to URL object
+    const baseUrl = new URL(url);
+
+    // Build complete headers with auth
     const headers = {
-      "Content-Type": "application/json",
       Accept: "application/json, text/event-stream",
     };
 
@@ -196,56 +205,105 @@ router.post("/fetch-mcp-tools", async (req, res) => {
     if (auth && auth.type !== "none" && auth.token) {
       if (auth.type === "bearer") {
         headers["Authorization"] = `Bearer ${auth.token}`;
-      } else if (auth.type === "api_key") {
-        const headerName = auth.header || "X-API-Key";
-        headers[headerName] = auth.token;
+        console.log(
+          `🔐 Using Bearer auth: Authorization: Bearer ${auth.token.substring(
+            0,
+            10
+          )}...`
+        );
+      } else if (auth.type === "api_key" && auth.header) {
+        headers[auth.header] = auth.token;
+        console.log(
+          `🔐 Using API Key auth: ${auth.header}: ${auth.token.substring(
+            0,
+            10
+          )}...`
+        );
       }
     }
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "tools/list",
-        params: {},
-      }),
-    });
+    console.log(`🔗 Headers for MCP connection:`, Object.keys(headers));
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const text = await response.text();
-    let data;
-
-    // Handle SSE response
-    if (text.includes("data: ")) {
-      const dataLine = text
-        .split("\n")
-        .find((line) => line.startsWith("data: "));
-      if (dataLine) {
-        data = JSON.parse(dataLine.substring(6));
+    // Create MCP client
+    client = new Client(
+      {
+        name: "AI402-Tools-Fetcher",
+        version: "1.0.0",
+      },
+      {
+        capabilities: {
+          roots: {},
+          sampling: {},
+          tools: {},
+        },
       }
-    } else {
-      // Handle regular JSON response
-      data = JSON.parse(text);
+    );
+
+    // ✅ Try connection with CORRECT header format
+    let transport;
+    let transportUsed = "unknown";
+
+    try {
+      console.log(`🤝 Attempting StreamableHTTP connection...`);
+      transport = new StreamableHTTPClientTransport(baseUrl, {
+        requestInit: {
+          headers, // ✅ FIXED: Headers inside requestInit!
+        },
+      });
+      await client.connect(transport);
+      transportUsed = "StreamableHTTP";
+      console.log(`✅ Connected using StreamableHTTP - session established`);
+    } catch (streamableError) {
+      console.log(`⚠️ StreamableHTTP failed: ${streamableError.message}`);
+      console.log(`🔄 Trying SSE transport...`);
+
+      try {
+        transport = new SSEClientTransport(baseUrl, {
+          requestInit: {
+            headers, // ✅ FIXED: Headers inside requestInit!
+          },
+        });
+        await client.connect(transport);
+        transportUsed = "SSE";
+        console.log(`✅ Connected using SSE - session established`);
+      } catch (sseError) {
+        console.log(`❌ SSE also failed: ${sseError.message}`);
+        throw new Error(
+          `Failed to connect with both transports. StreamableHTTP: ${streamableError.message}, SSE: ${sseError.message}`
+        );
+      }
     }
 
-    const tools = data.result?.tools || [];
+    // Now fetch tools (session is established)
+    console.log(`🛠️ Fetching tools from established session...`);
+    const toolsResponse = await client.listTools();
+    const tools = toolsResponse.tools || [];
 
-    res.json({
+    console.log(
+      `✅ Successfully fetched ${tools.length} tools using ${transportUsed} transport`
+    );
+
+    return res.json({
       success: true,
       tools,
+      transport: transportUsed,
       count: tools.length,
     });
   } catch (error) {
     console.error("Error fetching MCP tools:", error);
-    res.status(500).json({
+    return res.status(500).json({
       error: "Failed to fetch MCP tools",
       message: error.message,
     });
+  } finally {
+    if (client) {
+      try {
+        await client.close();
+        console.log("🔌 MCP client connection closed");
+      } catch (closeError) {
+        console.error("Error closing MCP client:", closeError);
+      }
+    }
   }
 });
 
@@ -289,6 +347,126 @@ router.get("/:id/transactions", async (req, res) => {
       error: "Failed to get transactions",
       message: error.message,
     });
+  }
+});
+
+/**
+ * @route   GET /api/resources/:id/tools
+ * @desc    Get tools for a specific MCP resource (for frontend)
+ * @access  Public
+ */
+router.get("/:id/tools", async (req, res) => {
+  let client;
+  try {
+    const { id } = req.params;
+
+    // Get the resource
+    const resource = await Resource.findOne({ id }).select(
+      "originalUrl name type mcpAuth"
+    );
+    if (!resource) {
+      return res.status(404).json({ error: "Resource not found" });
+    }
+
+    if (resource.type !== "mcp_server") {
+      return res.status(400).json({ error: "Resource is not an MCP server" });
+    }
+
+    console.log(`🔍 Fetching tools for resource: ${resource.name}`);
+
+    // Use MCP Client SDK to fetch tools from original URL
+    const baseUrl = new URL(resource.originalUrl);
+
+    client = new Client(
+      {
+        name: "ai402-resource-tools-fetcher",
+        version: "1.0.0",
+      },
+      {
+        capabilities: {
+          roots: {},
+          sampling: {},
+          tools: {},
+        },
+      }
+    );
+
+    // ✅ Prepare auth headers based on resource configuration
+    const authHeaders = {
+      Accept: "application/json, text/event-stream",
+    };
+    if (resource.mcpAuth && resource.mcpAuth.type !== "none") {
+      if (resource.mcpAuth.type === "bearer" && resource.mcpAuth.token) {
+        authHeaders["Authorization"] = `Bearer ${resource.mcpAuth.token}`;
+      } else if (
+        resource.mcpAuth.type === "api_key" &&
+        resource.mcpAuth.token
+      ) {
+        const headerName = resource.mcpAuth.header || "X-API-Key";
+        authHeaders[headerName] = resource.mcpAuth.token;
+      }
+    }
+
+    // Try transport fallback with auth headers
+    let transport;
+    let transportUsed = "unknown";
+
+    try {
+      transport = new StreamableHTTPClientTransport(baseUrl, {
+        requestInit: {
+          headers: authHeaders,
+        },
+      });
+      await client.connect(transport);
+      transportUsed = "StreamableHTTP";
+      console.log("✅ Connected using Streamable HTTP transport with auth");
+    } catch (error) {
+      console.log("⚠️ Streamable HTTP failed, trying SSE transport with auth");
+      try {
+        transport = new SSEClientTransport(baseUrl, {
+          requestInit: {
+            headers: authHeaders,
+          },
+        });
+        await client.connect(transport);
+        transportUsed = "SSE";
+        console.log("✅ Connected using SSE transport with auth");
+      } catch (sseError) {
+        throw new Error(
+          `Failed to connect with both transports. StreamableHTTP: ${error.message}, SSE: ${sseError.message}`
+        );
+      }
+    }
+
+    // Fetch tools
+    const toolsResponse = await client.listTools();
+    const tools = toolsResponse.tools || [];
+
+    console.log(
+      `✅ Successfully fetched ${tools.length} tools using ${transportUsed} transport`
+    );
+
+    res.json({
+      success: true,
+      tools,
+      count: tools.length,
+      transport: transportUsed,
+    });
+  } catch (error) {
+    console.error("Error fetching resource tools:", error);
+    res.status(500).json({
+      error: "Failed to fetch resource tools",
+      message: error.message,
+    });
+  } finally {
+    if (client) {
+      try {
+        await client.close();
+        console.log("🔌 MCP client connection closed");
+      } catch (closeError) {
+        console.warn("Error closing MCP client:", closeError.message);
+      }
+    }
   }
 });
 
